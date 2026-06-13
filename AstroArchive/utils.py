@@ -198,7 +198,7 @@ def generate_pretty_name(folder_name, caldwell_map, reverse_caldwell_map, common
 
 # --- UPDATE LOGIK (GITHUB INTEGRATION) ---
 GITHUB_USER = "SteffSarek" # <-- HIER DEINEN GITHUB NAMEN EINTRAGEN
-GITHUB_REPO = "AstroArchive"   # Der Name deines Repositories auf Github
+GITHUB_REPO = "ArchiveExplorer"   # Der Name deines Repositories auf Github
 
 def get_remote_version():
     """Lädt die Versionsnummer vom aktuellsten GitHub Release."""
