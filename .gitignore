@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 AstroArchive/astro_log.txt
 AstroArchive/astroarchive_config.json
+AstroArchive/user_notes.json
