@@ -54,7 +54,6 @@ class LibraryScanner:
                                     if not fits_file and lower_file.endswith(('.fit', '.fits')): 
                                         fits_file = os.path.join(root, file)
                             
-                            # --- SMARTE SORTIERUNG ---
                             def image_sort_key(filepath):
                                 filename = os.path.basename(filepath).lower()
                                 ext = os.path.splitext(filename)[1]
@@ -77,13 +76,11 @@ class LibraryScanner:
                                 "telescope": telescope_type
                             }
                             
-                            # Das Hauptobjekt eintragen
                             self.index[obj_name_lower] = entry_data
                             self.constellations[c_key].append({"name": obj_name, "type": telescope_type})
                             count += 1
 
-                            # --- NEU: MULTIPLE IDs IM ORDNERNAMEN ERKENNEN ---
-                            # Findet z.B. "M 89" und "M 90" in "M_89_M_90_Seestar_S50"
+                            # MULTIPLE IDs IM ORDNERNAMEN ERKENNEN
                             all_ids = re.findall(r'(?:^|[^a-zA-Z])(M|NGC|IC|C)[_\s-]*(\d+)(?![0-9])', obj_name, re.IGNORECASE)
                             
                             seen_ids = set()
@@ -94,20 +91,17 @@ class LibraryScanner:
                                     seen_ids.add(ident)
                                     unique_ids.append((prefix, num))
 
-                            # Wenn mehr als eine Katalog-ID gefunden wurde, legen wir virtuelle Zwillinge an
                             if len(unique_ids) > 1:
                                 for cat_prefix, num in unique_ids[1:]:
                                     virt_key = f"{cat_prefix.lower()}{num}"
-                                    # Nur anlegen, wenn es nicht ohnehin schon als Hauptordner existiert
                                     if virt_key not in self.index:
                                         virt_data = entry_data.copy()
                                         virt_data["original_name"] = f"{cat_prefix.upper()} {num} (in {obj_name})"
                                         self.index[virt_key] = virt_data
                                         self.constellations[c_key].append({"name": f"{cat_prefix.upper()} {num} (via {obj_name})", "type": telescope_type})
                                         count += 1
-                            # --------------------------------------------------
 
-                            # Virtuelle Einträge für Ranges (M31-33)
+                            # Virtuelle Einträge für Ranges (z.B. M31-33)
                             range_match = re.search(r'^([M|NGC|IC]+)[_\s]*(\d+)\s*-\s*(\d+)', obj_name, re.IGNORECASE)
                             if range_match:
                                 cat_prefix = range_match.group(1).upper()
@@ -124,7 +118,7 @@ class LibraryScanner:
                                             self.constellations[c_key].append({"name": f"{cat_prefix} {i} (via {obj_name})", "type": telescope_type})
                                             count += 1
             
-            # 2. Includes anwenden (Für fest definierte Gruppen wie M 31 & M 32)
+            # 2. Includes anwenden
             count += self._apply_includes()
             return self.index, self.constellations, f"Index aktualisiert! {count} Objekte gefunden."
             
@@ -151,33 +145,21 @@ class LibraryScanner:
             current_data = self.index[key]
             my_id = extract_clean_id(current_data["original_name"]) 
             
-            # Fall A: Ich bin ein Parent (habe Kinder im JSON)
+            # --- FIX: Nur noch Parent -> Child Vererbung zulassen! ---
+            # Wenn ich ein Parent bin (habe Kinder im JSON), erstelle ich die Kinder-Einträge.
+            # Der fehlerhafte "Fall B" (Kind erstellt Parent) wurde komplett entfernt.
             if my_id in norm_includes:
                 entry = norm_includes[my_id]
                 for i, child_clean in enumerate(entry["children"]):
                     child_orig_name = entry["orig_children"][i]
                     child_lower = child_orig_name.lower().strip()
+                    
+                    # Nur anlegen, wenn der Ordner nicht physisch existiert
                     if child_lower not in self.index:
                         self.index[child_lower] = current_data.copy()
                         self.index[child_lower]["original_name"] = child_orig_name
                         if current_data["parent"] in self.constellations: 
                             self.constellations[current_data["parent"]].append({"name": child_orig_name + " (via " + entry["original_p"] + ")", "type": current_data["telescope"]})
                         added_count += 1
-            
-            # Fall B: Ich bin ein Kind (stehe bei jemand anderem im JSON)
-            parent_found = None
-            parent_orig_name = None
-            for p_clean, entry in norm_includes.items():
-                if my_id in entry["children"]: 
-                    parent_found = p_clean; parent_orig_name = entry["original_p"]; break
-            
-            if parent_found:
-                p_lower = parent_orig_name.lower().strip()
-                if p_lower not in self.index:
-                    self.index[p_lower] = current_data.copy()
-                    self.index[p_lower]["original_name"] = parent_orig_name
-                    if current_data["parent"] in self.constellations: 
-                        self.constellations[current_data["parent"]].append({"name": parent_orig_name + " (via " + current_data["original_name"] + ")", "type": current_data["telescope"]})
-                    added_count += 1
-                    
+                        
         return added_count
