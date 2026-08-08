@@ -9,7 +9,6 @@ class LibraryScanner:
         self.constellations = {}
 
     def scan(self, base_folder):
-        """Scannt den Ordner und gibt (index, constellations, count) zurück."""
         self.index = {}
         self.constellations = {}
         count = 0
@@ -18,7 +17,6 @@ class LibraryScanner:
             return {}, {}, "Pfad ungültig."
 
         try:
-            # 1. Physischer Scan
             with os.scandir(base_folder) as const_it:
                 for const_entry in const_it:
                     if not const_entry.is_dir() or const_entry.name.startswith(('.', '$')):
@@ -44,15 +42,22 @@ class LibraryScanner:
                             elif "dwarf" in obj_name_lower: telescope_type = "dwarf"
                             
                             image_files = [] 
-                            fits_file = None
+                            fits_candidates = []
                             
                             for root, dirs, files in os.walk(obj_path):
+                                # --- FIX 1: Ignoriere Systemordner und _Aussortiert ---
+                                dirs[:] = [d for d in dirs if not d.startswith(('_', '.')) and d.lower() not in ['darks', 'flats', 'bias']]
+                                
                                 for file in files:
                                     lower_file = file.lower()
+                                    full_path = os.path.join(root, file)
+                                    
                                     if lower_file.endswith(('.jpg', '.jpeg', '.png', '.tif', '.tiff')): 
-                                        image_files.append(os.path.join(root, file))
-                                    if not fits_file and lower_file.endswith(('.fit', '.fits')): 
-                                        fits_file = os.path.join(root, file)
+                                        image_files.append(full_path)
+                                    elif lower_file.endswith(('.fit', '.fits')): 
+                                        # Keine Darks/Flats/Bias als Muster zulassen
+                                        if not any(x in lower_file for x in ['dark', 'flat', 'bias']):
+                                            fits_candidates.append(full_path)
                             
                             def image_sort_key(filepath):
                                 filename = os.path.basename(filepath).lower()
@@ -63,9 +68,20 @@ class LibraryScanner:
                                 return (priority, filename)
 
                             image_files.sort(key=image_sort_key)
-
                             preview_image = image_files[0] if image_files else None
                             
+                            # --- FIX 2: Das beste FITS als Muster wählen ---
+                            fits_file = None
+                            if fits_candidates:
+                                def fits_prio(fp):
+                                    name = os.path.basename(fp).lower()
+                                    if "stacked" in name or "result" in name: return 0
+                                    if "light" in name: return 1
+                                    return 2
+                                fits_candidates.sort(key=fits_prio)
+                                fits_file = fits_candidates[0]
+                            # -------------------------------------------------
+
                             entry_data = {
                                 "path": obj_path, 
                                 "image": preview_image, 
@@ -80,7 +96,6 @@ class LibraryScanner:
                             self.constellations[c_key].append({"name": obj_name, "type": telescope_type})
                             count += 1
 
-                            # MULTIPLE IDs IM ORDNERNAMEN ERKENNEN
                             all_ids = re.findall(r'(?:^|[^a-zA-Z])(M|NGC|IC|C)[_\s-]*(\d+)(?![0-9])', obj_name, re.IGNORECASE)
                             
                             seen_ids = set()
@@ -101,7 +116,6 @@ class LibraryScanner:
                                         self.constellations[c_key].append({"name": f"{cat_prefix.upper()} {num} (via {obj_name})", "type": telescope_type})
                                         count += 1
 
-                            # Virtuelle Einträge für Ranges (z.B. M31-33)
                             range_match = re.search(r'^([M|NGC|IC]+)[_\s]*(\d+)\s*-\s*(\d+)', obj_name, re.IGNORECASE)
                             if range_match:
                                 cat_prefix = range_match.group(1).upper()
@@ -118,7 +132,6 @@ class LibraryScanner:
                                             self.constellations[c_key].append({"name": f"{cat_prefix} {i} (via {obj_name})", "type": telescope_type})
                                             count += 1
             
-            # 2. Includes anwenden
             count += self._apply_includes()
             return self.index, self.constellations, f"Index aktualisiert! {count} Objekte gefunden."
             
@@ -145,16 +158,12 @@ class LibraryScanner:
             current_data = self.index[key]
             my_id = extract_clean_id(current_data["original_name"]) 
             
-            # --- FIX: Nur noch Parent -> Child Vererbung zulassen! ---
-            # Wenn ich ein Parent bin (habe Kinder im JSON), erstelle ich die Kinder-Einträge.
-            # Der fehlerhafte "Fall B" (Kind erstellt Parent) wurde komplett entfernt.
             if my_id in norm_includes:
                 entry = norm_includes[my_id]
                 for i, child_clean in enumerate(entry["children"]):
                     child_orig_name = entry["orig_children"][i]
                     child_lower = child_orig_name.lower().strip()
                     
-                    # Nur anlegen, wenn der Ordner nicht physisch existiert
                     if child_lower not in self.index:
                         self.index[child_lower] = current_data.copy()
                         self.index[child_lower]["original_name"] = child_orig_name

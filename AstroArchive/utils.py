@@ -42,8 +42,9 @@ def read_fits_coords(fits_path):
             dec = None
             for hdu in hdul:
                 header = hdu.header
-                ra = header.get('RA') or header.get('OBJCTRA')
-                dec = header.get('DEC') or header.get('OBJCTDEC')
+                # --- FIX: Jetzt auch mit WCS Standard CRVAL1/2 (für gestackte Bilder) ---
+                ra = header.get('RA') or header.get('OBJCTRA') or header.get('CRVAL1')
+                dec = header.get('DEC') or header.get('OBJCTDEC') or header.get('CRVAL2')
                 if ra is not None and dec is not None:
                     break
             
@@ -137,32 +138,25 @@ def format_telescope(raw_type):
 def generate_pretty_name(folder_name, caldwell_map, reverse_caldwell_map, common_names):
     norm_folder = normalize_string(folder_name)
     
-    # --- Reverse-Lookup für Eigennamen ---
     for c_name, c_id in common_names.items():
         if normalize_string(c_name) == norm_folder:
             folder_name = c_id
             break
 
-    # --- FIX: Jetzt werden auch Sh2, vdB, Barnard, Collinder und Melotte erkannt! ---
-    match = re.search(r'(ngc|m|ic|c|sh2|sh\s*2|b|vdb|cr|mel)[_\s-]*(\d+)', folder_name, re.IGNORECASE)
+    match = re.search(r'(ngc|m|ic|c|vdb|sh2|ldn|lbn)[_\s-]*(\d+)', folder_name, re.IGNORECASE)
+    
     if not match: 
         if folder_name.islower() and not folder_name.isdigit():
             return folder_name.title()
-        return folder_name
+        return folder_name.replace("_", " ").replace("  ", " ")
 
-    # Katalog-Typ und Nummer extrahieren
-    raw_cat = match.group(1).upper().replace(" ", "")
+    cat_type = match.group(1).upper()
+    if cat_type == "VDB": cat_type = "vdB"
+    elif cat_type == "SH2": cat_type = "Sh2"
+    
     number = match.group(2)
     
-    # Schöne Formatierung für die "Exoten"
-    if raw_cat == "SH2": cat_type = "Sh2"
-    elif raw_cat == "VDB": cat_type = "vdB"
-    elif raw_cat == "CR": cat_type = "Cr"
-    elif raw_cat == "MEL": cat_type = "Mel"
-    else: cat_type = raw_cat
-    
-    # Haupt-ID zusammenbauen (Sh2 und vdB haben traditionell einen Bindestrich, die anderen ein Leerzeichen)
-    if cat_type in ["Sh2", "vdB"]:
+    if cat_type == "Sh2":
         main_id = f"{cat_type}-{number}"
     else:
         main_id = f"{cat_type} {number}"
@@ -171,7 +165,6 @@ def generate_pretty_name(folder_name, caldwell_map, reverse_caldwell_map, common
     
     display_parts = [main_id]
 
-    # Caldwell-Logik
     if cat_type == "C":
         if number in caldwell_map: 
             alias = str(caldwell_map[number]).replace(")", "") 
@@ -182,43 +175,23 @@ def generate_pretty_name(folder_name, caldwell_map, reverse_caldwell_map, common
             c_num = reverse_caldwell_map[norm_id]
             display_parts.append(f"(C {c_num})")
 
-    # Alle bekannten Eigennamen zu dieser ID suchen
     found_common = []
     for name, cat_id in common_names.items():
         if normalize_string(cat_id) == norm_id: 
             clean_name = name.title().replace(")", "") 
             found_common.append(clean_name)
     
-    # Eigennamen anhängen
     if found_common:
         unique_common = sorted(list(set(found_common)))
         display_parts.append("- " + ", ".join(unique_common))
 
     return " ".join(display_parts)
 
-# --- UPDATE LOGIK (GITHUB INTEGRATION) ---
-GITHUB_USER = "SteffSarek" # <-- HIER DEINEN GITHUB NAMEN EINTRAGEN
-GITHUB_REPO = "ArchiveExplorer"   # Der Name deines Repositories auf Github
-
-def get_remote_version():
-    """Lädt die Versionsnummer vom aktuellsten GitHub Release."""
-    import json
-    import urllib.request
-    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/releases/latest"
+def get_remote_version(version_url):
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'AstroArchive-App'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            return data.get("tag_name", "")
+        with urllib.request.urlopen(version_url, timeout=3) as response:
+            content = response.read().decode('utf-8').strip()
+            return content
     except Exception as e: 
         logging.warning(f"Konnte Update-Server nicht erreichen: {e}")
         return None
-
-def open_update_folder():
-    """Öffnet die Release-Seite auf GitHub im Standard-Browser."""
-    import webbrowser
-    url = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/releases/latest"
-    try: 
-        webbrowser.open(url)
-    except Exception as e: 
-        logging.error(f"Konnte URL nicht öffnen ({url}): {e}")

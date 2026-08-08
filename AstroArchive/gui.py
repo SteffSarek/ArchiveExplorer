@@ -764,12 +764,14 @@ class AstroApp(ctk.CTk):
         
         self.path_entry.delete(0, "end")
         
+        # --- FIX: Der Refresh Button ist jetzt immer klickbar! ---
         if "---" not in data["coords"]: 
             self.btn_copy.configure(state="normal")
-            self.btn_refresh_coords.configure(state="normal")
         else: 
             self.btn_copy.configure(state="disabled")
-            self.btn_refresh_coords.configure(state="disabled")
+            
+        self.btn_refresh_coords.configure(state="normal") 
+        # ---------------------------------------------------------
         
         if data["wiki_url"]: self.btn_wiki.configure(state="normal", command=lambda: self.logic.open_url(data["wiki_url"]))
         else: self.btn_wiki.configure(state="disabled")
