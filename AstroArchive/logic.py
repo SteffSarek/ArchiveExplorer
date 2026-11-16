@@ -9,6 +9,8 @@ import webbrowser
 import numpy as np
 from logic_mobile import MobileExporter
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun, get_body
+from astropy.coordinates.name_resolve import sesame_url
+sesame_url.set("https://cds.unistra.fr/cgi-bin/nph-sesame/-oxp/?")
 import astropy.units as u
 from astropy.time import Time, TimeDelta
 from datetime import datetime, timedelta
@@ -1001,7 +1003,7 @@ class AstroLogic:
     
     def open_aladin(self, ra, dec):
         if ra is None or dec is None: return
-        open_url(f"https://aladin.u-strasbg.fr/AladinLite/?target={ra:.4f}+{dec:.4f}&fov=1.0&survey=P%2FDSS2%2Fcolor")
+        open_url(f"https://aladin.cds.unistra.fr/AladinLite/?target={ra:.4f}%20{dec:+.4f}&fov=1.0")
     
     def get_constellation_objects(self, const_name):
         cache_key = f"const_{const_name}"

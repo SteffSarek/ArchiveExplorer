@@ -68,7 +68,7 @@ class AstroApp(ctk.CTk):
         if self.logic.base_folder:
             self.refresh_library()
 
-        # --- NEU: LIVE-LOG FENSTER (Unten rechts) ---
+        # --- LIVE-LOG FENSTER (Unten rechts) ---
         self.log_frame = ctk.CTkFrame(self, height=120)
         self.log_frame.grid(row=1, column=1, sticky="ew", padx=20, pady=(0, 20))
         self.log_frame.pack_propagate(False) # Hält den Frame auf exakt 120px Höhe
@@ -78,7 +78,7 @@ class AstroApp(ctk.CTk):
         self.log_textbox.configure(state="disabled")
         
         self.add_log_message("System bereit. AstroArchive Log gestartet.")
-        # --------------------------------------------
+        # ---------------------------------------
 
     def on_closing(self):
         if messagebox.askyesno("AstroArchive Beenden", "Möchtest du das Programm wirklich beenden?"):
@@ -117,6 +117,7 @@ class AstroApp(ctk.CTk):
         
         self.btn_atlas = ctk.CTkButton(maps_frame, text="🌍 Mein Himmelsatlas", fg_color="transparent", border_width=1, text_color="#3498db", command=self.generate_and_open_atlas)
         self.btn_atlas.pack(fill="x")
+        self.btn_atlas.bind("<Button-3>", self.show_atlas_context) # <--- Rechtsklick für Web-Export
 
         # --- EXTRAS ---
         tools_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -189,10 +190,10 @@ class AstroApp(ctk.CTk):
         self.btn_app_settings = ctk.CTkButton(bottom_frame, text="⚙ Einstellungen", fg_color="#34495e", hover_color="#2c3e50", command=self.open_app_settings)
         self.btn_app_settings.pack(pady=(0, 10))
 
-        # --- NEU: DATENBANK EDITOR ---
+        # --- DATENBANK EDITOR ---
         self.btn_db_editor = ctk.CTkButton(bottom_frame, text="✏️ Datenbank bearbeiten", fg_color="transparent", border_width=1, text_color="#f1c40f", command=self.open_catalog_editor)
         self.btn_db_editor.pack(pady=(0, 10))
-        # -----------------------------
+        # ------------------------
         
         self.btn_about = ctk.CTkButton(bottom_frame, text="ℹ  Über AstroArchive", fg_color="transparent", border_width=1, text_color="gray80", command=self.open_about)
         self.btn_about.pack()
@@ -258,10 +259,10 @@ class AstroApp(ctk.CTk):
         self.obs_time_label = ctk.CTkLabel(self.coords_frame, text="", text_color="#2ecc71", font=ctk.CTkFont(size=13, weight="bold"))
         self.obs_time_label.pack(side="left", padx=(25, 0))
 
-        # --- NEU: Warnlabel für den Mond ---
+        # --- Warnlabel für den Mond ---
         self.moon_warning_label = ctk.CTkLabel(self.coords_frame, text="", font=ctk.CTkFont(size=13, weight="bold"))
         self.moon_warning_label.pack(side="left", padx=(20, 0))
-        # -----------------------------------
+        # ------------------------------
 
         self.status_indicator = ctk.CTkLabel(self.detail_frame, text="", text_color="gray")
         self.status_indicator.pack(pady=5)
@@ -283,7 +284,6 @@ class AstroApp(ctk.CTk):
         
         self.btn_aladin = ctk.CTkButton(self.action_frame, text="Aladin", width=70, state="disabled", fg_color="#8B0000") 
         self.btn_aladin.pack(side="left", padx=2)
-        # --- NEU: Rechtsklick für lokales Solve ---
         self.btn_aladin.bind("<Button-3>", self.show_aladin_context)
 
         self.btn_smartsuite = ctk.CTkButton(self.action_frame, text="📊 SmartSuite", width=100, fg_color="#8E44AD", hover_color="#6C3483", state="disabled", command=self.launch_smartsuite)
@@ -366,7 +366,7 @@ class AstroApp(ctk.CTk):
         self.btn_save_note = ctk.CTkButton(self.note_frame, text="💾 Speichern", command=self.save_current_note, state="disabled")
         self.btn_save_note.pack(fill="x", padx=10, pady=(5, 10))
 
-        # --- NEU: Plot Container ganz unten in der Detailansicht ---
+        # --- Plot Container ganz unten in der Detailansicht ---
         self.plot_container = ctk.CTkFrame(self.detail_frame, height=180, fg_color="transparent")
         self.plot_container.pack(fill="x", padx=20, pady=(10, 20))
 
@@ -377,7 +377,7 @@ class AstroApp(ctk.CTk):
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_container)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
-        # -----------------------------------------------------------
+        # ------------------------------------------------------
 
     def add_log_message(self, message):
         """Schreibt eine Nachricht mit Zeitstempel in das Log-Fenster."""
@@ -408,14 +408,12 @@ class AstroApp(ctk.CTk):
     def run_local_aladin_workflow(self):
         start_dir = self.path_entry.get() if self.path_entry.get() else self.logic.base_folder
         
-        # --- FIX: Erlaube JPG und PNG im Dateidialog ---
         file_path = filedialog.askopenfilename(initialdir=start_dir, title="Bild auswählen", filetypes=[("Bilder", "*.fits *.fit *.fts *.jpg *.jpeg *.png"), ("Alle Dateien", "*.*")])
         if not file_path: return
         
         def status_cb(msg, is_ok):
-            # Nutzt die direkte Funktionsübergabe ohne lambda (100% sicher bei Threads!)
             color = "green" if is_ok else "red"
-            self.after(0, self.status_indicator.configure, {"text": msg, "text_color": color})
+            self.after(0, lambda m=msg, c=color: self.status_indicator.configure(text=m, text_color=c))
             self.after(0, self.add_log_message, msg)
             
         self.status_indicator.configure(text="ASTAP läuft...", text_color="yellow")
@@ -579,12 +577,30 @@ class AstroApp(ctk.CTk):
         
         def on_atlas_ready(success, msg):
             color = "green" if success else "red"
-            self.after(0, self.status_indicator.configure, {"text": f"{'✅' if success else '❌'} {msg}", "text_color": color})
+            icon = "✅" if success else "❌"
+            self.after(0, lambda m=msg, c=color, ic=icon: self.status_indicator.configure(text=f"{ic} {m}", text_color=c))
             self.after(0, self.add_log_message, msg)
                 
-        # Das eigentliche Bauen des Atlas verlagern wir in einen Thread, damit das Programm nicht einfriert
-        import threading
         threading.Thread(target=lambda: self.logic.create_aladin_lite_atlas(on_atlas_ready), daemon=True).start()
+
+    def show_atlas_context(self, event):
+        menu = Menu(self, tearoff=0)
+        menu.add_command(label="🌐 Website-Paket exportieren (für Astro-Nerd.info)", command=self.generate_web_atlas)
+        try: menu.tk_popup(event.x_root, event.y_root)
+        finally: menu.grab_release()
+
+    def generate_web_atlas(self):
+        self.status_indicator.configure(text="Erstelle Website-Paket (komprimiere Bilder)...", text_color="yellow")
+        self.add_log_message("Erstelle optimiertes Web-Paket für Astro-Nerd.info...")
+        self.update()
+        
+        def on_web_ready(success, msg):
+            color = "green" if success else "red"
+            icon = "✅" if success else "❌"
+            self.after(0, lambda m=msg, c=color, ic=icon: self.status_indicator.configure(text=f"{ic} {m}", text_color=c))
+            self.after(0, self.add_log_message, msg)
+                
+        threading.Thread(target=lambda: self.logic.atlas_exporter.generate_atlas(on_web_ready, for_web=True), daemon=True).start()
 
     def show_missing_objects(self, catalog_name):
         if self.win_missing is not None and self.win_missing.winfo_exists():
@@ -764,14 +780,12 @@ class AstroApp(ctk.CTk):
         
         self.path_entry.delete(0, "end")
         
-        # --- FIX: Der Refresh Button ist jetzt immer klickbar! ---
         if "---" not in data["coords"]: 
             self.btn_copy.configure(state="normal")
         else: 
             self.btn_copy.configure(state="disabled")
             
         self.btn_refresh_coords.configure(state="normal") 
-        # ---------------------------------------------------------
         
         if data["wiki_url"]: self.btn_wiki.configure(state="normal", command=lambda: self.logic.open_url(data["wiki_url"]))
         else: self.btn_wiki.configure(state="disabled")
@@ -1023,7 +1037,7 @@ class AstroApp(ctk.CTk):
             
             btn.grid(row=r, column=c, padx=2, pady=2, sticky="ew")
 
-    # --- NEU FÜR WIMS: Plot-Update Methode ---
+    # --- Plot-Update Methode ---
     def update_altitude_plot(self, ra, dec):
         times, alts = self.logic.get_altitude_curve(ra, dec)
         self.ax.clear()
@@ -1033,18 +1047,13 @@ class AstroApp(ctk.CTk):
             self.canvas.draw()
             return
 
-        # Kurve zeichnen
         self.ax.plot(times, alts, color='#3498db', linewidth=2)
         
-        # Bereich über dem Horizont (0°) blau einfärben
         fill_condition = [a > 0 for a in alts]
         self.ax.fill_between(times, alts, 0, where=fill_condition, color='#3498db', alpha=0.3)
 
-        # Horizont-Linie (Rot gestrichelt)
         self.ax.axhline(0, color='#e74c3c', linestyle='--', linewidth=1)
 
-        # Styling der Achsen
-        # --- NEU: Lokale Zeitzone (inkl. Sommerzeit) auf die X-Achse zwingen ---
         local_tz = datetime.now().astimezone().tzinfo
         self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=local_tz))
         self.ax.tick_params(axis='x', colors='gray', labelsize=9)
@@ -1077,5 +1086,4 @@ class AstroApp(ctk.CTk):
         count = self.logic.import_wims_objects(selected_keys)
         self.status_indicator.configure(text=f"✅ {count} Objekte in Todo-Liste importiert!", text_color="green")
         
-        # Todo-Liste nach dem Import direkt automatisch öffnen
         self.open_todo_list()
