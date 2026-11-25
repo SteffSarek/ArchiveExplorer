@@ -17,8 +17,7 @@ import matplotlib.dates as mdates
 # ----------------------------
 
 # --- MODULE IMPORTS ---
-from gui_popups import ImageViewerWindow, ConstellationSelectionDialog, MissingObjectsWindow, AboutWindow, ReportSelectionDialog
-from gui_catalog import CatalogOverviewWindow 
+from gui_catalog import CatalogOverviewWindow
 from gui_map import SkyMapWindow               
 from gui_stats import StatsWindow 
 from constants import OBJ_TYPE_COLORS 
@@ -136,9 +135,21 @@ class AstroApp(ctk.CTk):
         self.cat_label.grid(row=6, column=0, padx=20, pady=(20, 5))
         
         # --- BUTTONS FÜR KATALOGE ---
-        self.btn_all_objects = ctk.CTkButton(self.sidebar, text="📚 Gesamter Katalog", fg_color="transparent", border_width=1, 
-                                         command=lambda: self.open_catalog_window("Alle"))
-        self.btn_all_objects.grid(row=7, column=0, padx=20, pady=5)
+        cat_top_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        cat_top_frame.grid(row=7, column=0, padx=20, pady=0, sticky="ew")
+
+        self.btn_last_import = ctk.CTkButton(
+            cat_top_frame, text="📥 Letzter Import", fg_color="transparent",
+            border_width=1, text_color="#3498db",
+            command=lambda: self.open_catalog_window("Letzter Import")
+        )
+        self.btn_last_import.pack(pady=(5, 5))
+
+        self.btn_all_objects = ctk.CTkButton(
+            cat_top_frame, text="📚 Gesamter Katalog", fg_color="transparent",
+            border_width=1, command=lambda: self.open_catalog_window("Alle")
+        )
+        self.btn_all_objects.pack(pady=5)
         
         self.btn_all_ngc = ctk.CTkButton(self.sidebar, text="Alle NGC", fg_color="transparent", border_width=1, 
                                          command=lambda: self.open_catalog_window("NGC"))
@@ -232,7 +243,7 @@ class AstroApp(ctk.CTk):
         self.list_label = ctk.CTkLabel(self.main_frame, text="Gefundene Objekte / Ordnerinhalt:", anchor="w")
         self.list_label.pack(fill="x", pady=(10, 0))
         
-        self.scroll_list = ctk.CTkScrollableFrame(self.main_frame, height=60) 
+        self.scroll_list = ctk.CTkScrollableFrame(self.main_frame, height=130)
         self.scroll_list.pack(fill="x", pady=(0, 5))
 
         self.detail_frame = ctk.CTkFrame(self.main_frame)
@@ -310,6 +321,41 @@ class AstroApp(ctk.CTk):
         
         self.btn_next_img = ctk.CTkButton(self.img_nav_frame, text="▶", width=40, command=self.show_next_image)
         self.btn_next_img.pack(side="right")
+
+        # --- NEU: ATLAS-STEUERLEISTE FÜR DAS AKTUELLE BILD ---
+        self.lbl_img_filename = ctk.CTkLabel(
+            self.image_container, text="", font=ctk.CTkFont(size=12), text_color="#a0aec0"
+        )
+        self.img_atlas_bar = ctk.CTkFrame(self.image_container, fg_color="#222222", corner_radius=8)
+        
+        self.var_img_in_atlas = ctk.BooleanVar(value=True)
+        self.chk_img_in_atlas = ctk.CTkCheckBox(
+            self.img_atlas_bar, text="🌍 Im Atlas zeigen", variable=self.var_img_in_atlas,
+            font=ctk.CTkFont(size=12), width=130, command=self.on_toggle_img_in_atlas
+        )
+        self.chk_img_in_atlas.pack(side="left", padx=(12, 10), pady=6)
+
+        self.var_img_full_res = ctk.BooleanVar(value=False)
+        self.chk_img_full_res = ctk.CTkCheckBox(
+            self.img_atlas_bar, text="🌟 Volle Auflösung (HD)", variable=self.var_img_full_res,
+            font=ctk.CTkFont(size=12), width=150, command=self.on_toggle_img_full_res
+        )
+        self.chk_img_full_res.pack(side="left", padx=10, pady=6)
+
+        self.btn_img_cloud_solve = ctk.CTkButton(
+            self.img_atlas_bar, text="☁️ Cloud Solve", width=105, height=24,
+            fg_color="#D35400", hover_color="#A04000", font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self.solve_current_image_for_atlas(use_cloud=True)
+        )
+        self.btn_img_cloud_solve.pack(side="right", padx=(4, 10), pady=6)
+
+        self.btn_img_astap_solve = ctk.CTkButton(
+            self.img_atlas_bar, text="🎯 Lokal Solve", width=105, height=24,
+            fg_color="#2980b9", hover_color="#3498db", font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self.solve_current_image_for_atlas(use_cloud=False)
+        )
+        self.btn_img_astap_solve.pack(side="right", padx=4, pady=6)
+        # -----------------------------------------------------
 
         # RECHTS: Notizen & ToDo & TAGS
         self.note_frame = ctk.CTkFrame(self.content_area, width=300, corner_radius=10)
@@ -502,8 +548,68 @@ class AstroApp(ctk.CTk):
         self.status_indicator.configure(text="Scan fertig.", text_color="green")
         self.btn_scan.configure(state="normal")
         self.update_stats_display()
+
+        imp_cnt = len(getattr(self.logic, "last_import_keys", []))
+        if hasattr(self, "btn_last_import"):
+            self.btn_last_import.configure(
+                text=f"📥 Letzter Import ({imp_cnt})" if imp_cnt else "📥 Letzter Import"
+            )
+
         if self.current_detail_name:
             self.update_display(self.logic.get_object_data(self.current_detail_name))
+
+        new_imgs = getattr(self.logic, "last_scan_new_images", [])
+        new_objs = getattr(self.logic, "last_scan_new_obj_count", 0)
+
+        if new_imgs:
+            self.add_log_message(f"📥 Neuer Import erkannt: {len(new_imgs)} neue JPGs (in {imp_cnt} Ordnern) unter 'Letzter Import'.")
+            info_text = (
+                f"Es wurden {len(new_imgs)} neue JPG-Bilder gefunden"
+                + (f" ({new_objs} neue Objekte)" if new_objs else "")
+                + ".\n\nDie Einträge stehen ab sofort im Katalog '📥 Letzter Import' bereit.\n\n"
+                  "Möchtest du die neuen Bilder jetzt direkt für den Himmelsatlas solven?"
+            )
+            if messagebox.askyesno("Neue Bilder gefunden", info_text):
+                self._start_solve_new_imports(new_imgs)
+        elif imp_cnt and new_objs:
+            self.add_log_message(f"📥 {new_objs} neue Ordner im Katalog 'Letzter Import' verfügbar.")
+
+    def _start_solve_new_imports(self, new_imgs):
+        self.status_indicator.configure(text=f"⏳ Solve {len(new_imgs)} neue Bilder...", text_color="yellow")
+        self.add_log_message(f"Starte automatisches Solving für {len(new_imgs)} neue Bilder...")
+
+        def on_log(log_msg):
+            self.after(0, self.add_log_message, log_msg)
+
+        def run_batch():
+            solved_ok = 0
+            total = len(new_imgs)
+            for idx, (obj_key, img_path) in enumerate(new_imgs, start=1):
+                fname = os.path.basename(img_path)
+                self.after(0, lambda i=idx, t=total, f=fname: self.status_indicator.configure(
+                    text=f"⏳ Solve ({i}/{t}): {f}", text_color="yellow"
+                ))
+                ra_h, dec_h = None, None
+                try:
+                    obj_data = self.logic.get_object_data(obj_key, exact_match=True)
+                    ra_h = obj_data.get("ra_decimal")
+                    dec_h = obj_data.get("dec_decimal")
+                except Exception:
+                    pass
+                ok, _ = self.logic.atlas_exporter.solve_single_image_targeted(
+                    img_path, ra_hint=ra_h, dec_hint=dec_h, use_cloud=False, log_cb=on_log
+                )
+                if ok:
+                    solved_ok += 1
+
+            self.after(0, lambda: self.status_indicator.configure(
+                text=f"✅ Import-Solve fertig: {solved_ok}/{total} gelöst!", text_color="green"
+            ))
+            self.after(0, self.add_log_message, f"Import-Solve abgeschlossen: {solved_ok}/{total} Bilder gelöst.")
+            if self.current_detail_name:
+                self.after(0, lambda: self.update_display(self.logic.get_object_data(self.current_detail_name)))
+
+        threading.Thread(target=run_batch, daemon=True).start()
 
     def _focus_or_close_catalog(self, new_catalog_name):
         if self.win_catalog is not None and self.win_catalog.winfo_exists():
@@ -570,37 +676,67 @@ class AstroApp(ctk.CTk):
             return
         self.win_map = SkyMapWindow(self, self.logic, self.load_specific_object)
         
-    def generate_and_open_atlas(self):
-        self.status_indicator.configure(text="Erstelle interaktiven Atlas...", text_color="yellow")
-        self.add_log_message("Sammle Bilddaten für den Himmelsatlas...")
+    def generate_and_open_atlas(self, use_astap=False, force_retry=False, retry_failed=False):
+        self.btn_atlas.configure(state="disabled")
+        if retry_failed:
+            self.status_indicator.configure(text="Messe bisher gescheiterte Bilder neu ein...", text_color="yellow")
+            self.add_log_message("Starte Nach-Einmessung nur für bisher ungelöste Atlas-Bilder (gelöste bleiben erhalten)...")
+        elif use_astap:
+            self.status_indicator.configure(text="Vermesse fehlende Bilder...", text_color="yellow")
+            self.add_log_message("Starte Einmessung für Himmelsatlas (speichert nach jedem Bild)...")
+        else:
+            self.status_indicator.configure(text="Öffne Himmelsatlas...", text_color="yellow")
+            self.add_log_message("Erstelle Himmelsatlas aus Cache...")
         self.update()
         
+        def on_log(msg):
+            self.after(0, self.add_log_message, msg)
+
         def on_atlas_ready(success, msg):
             color = "green" if success else "red"
             icon = "✅" if success else "❌"
             self.after(0, lambda m=msg, c=color, ic=icon: self.status_indicator.configure(text=f"{ic} {m}", text_color=c))
             self.after(0, self.add_log_message, msg)
+            self.after(0, lambda: self.btn_atlas.configure(state="normal"))
                 
-        threading.Thread(target=lambda: self.logic.create_aladin_lite_atlas(on_atlas_ready), daemon=True).start()
+        threading.Thread(
+            target=lambda: self.logic.atlas_exporter.generate_atlas(
+                on_atlas_ready, for_web=False, use_astap=use_astap,
+                force_retry=force_retry, retry_failed=retry_failed, log_cb=on_log
+            ),
+            daemon=True
+        ).start()
 
     def show_atlas_context(self, event):
         menu = Menu(self, tearoff=0)
+        menu.add_command(label="🎯 Neue Bilder einmessen (Fortsetzen)", command=lambda: self.generate_and_open_atlas(use_astap=True, force_retry=False, retry_failed=False))
+        menu.add_command(label="🔁 Bisher gescheiterte Bilder erneut einmessen", command=lambda: self.generate_and_open_atlas(use_astap=True, force_retry=False, retry_failed=True))
+        menu.add_command(label="🔄 Alle Bilder komplett neu vermessen", command=lambda: self.generate_and_open_atlas(use_astap=True, force_retry=True, retry_failed=False))
+        menu.add_separator()
         menu.add_command(label="🌐 Website-Paket exportieren (für Astro-Nerd.info)", command=self.generate_web_atlas)
         try: menu.tk_popup(event.x_root, event.y_root)
         finally: menu.grab_release()
 
     def generate_web_atlas(self):
-        self.status_indicator.configure(text="Erstelle Website-Paket (komprimiere Bilder)...", text_color="yellow")
+        self.btn_atlas.configure(state="disabled")
+        self.status_indicator.configure(text="Erstelle Website-Paket...", text_color="yellow")
         self.add_log_message("Erstelle optimiertes Web-Paket für Astro-Nerd.info...")
         self.update()
         
+        def on_log(msg):
+            self.after(0, self.add_log_message, msg)
+
         def on_web_ready(success, msg):
             color = "green" if success else "red"
             icon = "✅" if success else "❌"
             self.after(0, lambda m=msg, c=color, ic=icon: self.status_indicator.configure(text=f"{ic} {m}", text_color=c))
             self.after(0, self.add_log_message, msg)
+            self.after(0, lambda: self.btn_atlas.configure(state="normal"))
                 
-        threading.Thread(target=lambda: self.logic.atlas_exporter.generate_atlas(on_web_ready, for_web=True), daemon=True).start()
+        threading.Thread(
+            target=lambda: self.logic.atlas_exporter.generate_atlas(on_web_ready, for_web=True, use_astap=False, log_cb=on_log),
+            daemon=True
+        ).start()
 
     def show_missing_objects(self, catalog_name):
         if self.win_missing is not None and self.win_missing.winfo_exists():
@@ -861,6 +997,10 @@ class AstroApp(ctk.CTk):
 
     def display_current_image(self):
         self.img_nav_frame.pack_forget()
+        if hasattr(self, "img_atlas_bar"):
+            self.img_atlas_bar.pack_forget()
+        if hasattr(self, "lbl_img_filename"):
+            self.lbl_img_filename.pack_forget()
         if self.image_label:
             try: self.image_label.destroy()
             except: pass
@@ -868,7 +1008,6 @@ class AstroApp(ctk.CTk):
         self.current_image_obj = None
 
         self.image_label = ctk.CTkLabel(self.image_container, text="")
-        
         self.image_label.pack(expand=True, side="top") 
 
         if not self.current_image_list:
@@ -883,8 +1022,15 @@ class AstroApp(ctk.CTk):
             self.image_label.configure(cursor="")
             return
 
-        self.img_nav_frame.pack(fill="x", pady=5, side="bottom")
         img_path = self.current_image_list[self.current_img_index]
+
+        if hasattr(self, "img_atlas_bar"):
+            self.img_atlas_bar.pack(fill="x", pady=(0, 6), side="bottom")
+        self.img_nav_frame.pack(fill="x", pady=(5, 2), side="bottom")
+        if hasattr(self, "lbl_img_filename"):
+            self.lbl_img_filename.configure(text=f"📄 {os.path.basename(img_path)}")
+            self.lbl_img_filename.pack(fill="x", pady=(4, 0), side="bottom")
+
         try:
             pil_img = Image.open(img_path)
             pil_img.thumbnail((600, 400)) 
@@ -898,11 +1044,120 @@ class AstroApp(ctk.CTk):
             self.image_label.configure(text=error_msg, image=None)
             self.current_image_obj = None
 
-        self.lbl_img_count.configure(text=f"{self.current_img_index + 1} / {len(self.current_image_list)}")
+        wcs_info = None
+        is_hi_res = False
+        is_in_atlas = True
+        if hasattr(self.logic, "atlas_exporter"):
+            ae = self.logic.atlas_exporter
+            if hasattr(ae, "get_cached_wcs"): wcs_info = ae.get_cached_wcs(img_path)
+            if hasattr(ae, "is_full_res"): is_hi_res = ae.is_full_res(img_path)
+            if hasattr(ae, "is_included_in_atlas"): is_in_atlas = ae.is_included_in_atlas(img_path)
+
+        if hasattr(self, "var_img_in_atlas"):
+            self.var_img_in_atlas.set(is_in_atlas)
+        if hasattr(self, "var_img_full_res"):
+            self.var_img_full_res.set(is_hi_res)
+
+        base_count_txt = f"{self.current_img_index + 1} / {len(self.current_image_list)}"
+        if not is_in_atlas:
+            self.lbl_img_count.configure(
+                text=f"{base_count_txt}   |   🚫 Vom Himmelsatlas ausgeschlossen",
+                text_color="gray"
+            )
+        elif wcs_info:
+            self.lbl_img_count.configure(
+                text=f"{base_count_txt}   |   ✅ Im Atlas eingemessen (FOV {wcs_info['fov']:.2f}°, Rot {wcs_info['rot']:+.1f}°)",
+                text_color="#2ecc71"
+            )
+        else:
+            self.lbl_img_count.configure(
+                text=f"{base_count_txt}   |   ⚠️ Noch nicht für Atlas eingemessen",
+                text_color="#f39c12"
+            )
+
         if self.current_img_index > 0: self.btn_prev_img.configure(state="normal")
         else: self.btn_prev_img.configure(state="disabled")
         if self.current_img_index < len(self.current_image_list) - 1: self.btn_next_img.configure(state="normal")
         else: self.btn_next_img.configure(state="disabled")
+
+    def on_toggle_img_in_atlas(self):
+        if not self.current_image_list: return
+        img_path = self.current_image_list[self.current_img_index]
+        state = self.var_img_in_atlas.get()
+        self.logic.atlas_exporter.set_included_in_atlas(img_path, state)
+        self.display_current_image()
+
+    def on_toggle_img_full_res(self):
+        if not self.current_image_list: return
+        img_path = self.current_image_list[self.current_img_index]
+        state = self.var_img_full_res.get()
+        self.logic.atlas_exporter.set_full_res(img_path, state)
+        self.display_current_image()
+
+    def show_image_atlas_solve_menu(self, event):
+        if not self.current_image_list: return
+        img_path = self.current_image_list[self.current_img_index]
+        fname = os.path.basename(img_path)
+        is_hi = self.logic.atlas_exporter.is_full_res(img_path) if hasattr(self.logic, "atlas_exporter") else False
+
+        menu = Menu(self, tearoff=0)
+        menu.add_command(
+            label=f"🎯 '{fname}' intensiv mit ASTAP für Himmelsatlas einmessen",
+            command=lambda: self.solve_current_image_for_atlas(use_cloud=False)
+        )
+        menu.add_command(
+            label=f"☁️ '{fname}' über Astrometry.net (Cloud) für Himmelsatlas lösen",
+            command=lambda: self.solve_current_image_for_atlas(use_cloud=True)
+        )
+        menu.add_separator()
+        if is_hi:
+            menu.add_command(
+                label=f"🌟 Volle Original-Auflösung für Web-Atlas ist AKTIV ✅ (Klicken für Standard 1400px)",
+                command=self.toggle_current_image_full_res
+            )
+        else:
+            menu.add_command(
+                label=f"🌟 '{fname}' in voller Original-Auflösung für Web-Atlas exportieren",
+                command=self.toggle_current_image_full_res
+            )
+        try: menu.tk_popup(event.x_root, event.y_root)
+        finally: menu.grab_release()
+
+    def toggle_current_image_full_res(self):
+        if not self.current_image_list: return
+        img_path = self.current_image_list[self.current_img_index]
+        new_state = self.logic.atlas_exporter.toggle_full_res(img_path)
+        if new_state:
+            self.status_indicator.configure(text="🌟 Bild wird beim nächsten Web-Export in voller Original-Auflösung exportiert!", text_color="#f1c40f")
+        else:
+            self.status_indicator.configure(text="Bild wird wieder in Standard-Webgröße (1400px) exportiert.", text_color="gray")
+        self.display_current_image()
+
+    def solve_current_image_for_atlas(self, use_cloud=False):
+        if not self.current_image_list: return
+        img_path = self.current_image_list[self.current_img_index]
+        fname = os.path.basename(img_path)
+        ra_h = self.current_ra
+        dec_h = self.current_dec
+
+        solver_mode = self.logic.get_solver_mode() if hasattr(self.logic, "get_solver_mode") else "Lokal"
+        mode_str = "Astrometry.net Cloud" if use_cloud else solver_mode
+        self.status_indicator.configure(text=f"⏳ Vermesse '{fname}' mit {mode_str}...", text_color="yellow")
+        self.add_log_message(f"Starte gezielte Atlas-Einmessung ({mode_str}) für: {fname}")
+        self.update()
+
+        def on_log(msg):
+            self.after(0, self.add_log_message, msg)
+
+        def run_task():
+            ok, msg = self.logic.atlas_exporter.solve_single_image_targeted(
+                img_path, ra_hint=ra_h, dec_hint=dec_h, use_cloud=use_cloud, log_cb=on_log
+            )
+            color = "green" if ok else "orange"
+            self.after(0, lambda m=msg, c=color: self.status_indicator.configure(text=m, text_color=c))
+            self.after(0, self.display_current_image)
+
+        threading.Thread(target=run_task, daemon=True).start()
 
     def show_next_image(self):
         if self.current_img_index < len(self.current_image_list) - 1:
@@ -956,7 +1211,8 @@ class AstroApp(ctk.CTk):
             btn.pack(fill="x", pady=2)
 
     def _on_list_item_click(self, display_name):
-        self._execute_search(display_name, exact_match=True)
+        clean_name = re.sub(r'\s*\[(?:📷\s*\d+|⚠️\s*kein Bild)\]\s*$', '', display_name).strip()
+        self._execute_search(clean_name, exact_match=True)
 
     def add_current_tag(self):
         if not self.current_detail_name: return
@@ -984,7 +1240,7 @@ class AstroApp(ctk.CTk):
             widget.destroy()
             
         search_key = getattr(self, "current_internal_id", None) or self.current_detail_name
-        tags_data = self.logic.get_tags(search_key)
+        tags_data = self.logic.get_tags(search_key, extra_name=self.current_detail_name)
         
         if isinstance(tags_data, list):
              auto_tags = []

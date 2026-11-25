@@ -381,7 +381,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.on_save_callback = on_save_callback
         
         self.title("Einstellungen")
-        self.geometry("500x680") 
+        self.geometry("520x720") 
         self.resizable(False, False)
         
         self.lift()
@@ -389,42 +389,42 @@ class SettingsWindow(ctk.CTkToplevel):
         self.after(200, lambda: self.attributes('-topmost', False))
         self.focus_force()
         
-        ctk.CTkLabel(self, text="Programm Einstellungen", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 10))
+        ctk.CTkLabel(self, text="Programm Einstellungen", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(15, 8))
         
         loc_frame = ctk.CTkFrame(self)
-        loc_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(loc_frame, text="Dein Standort (für Beobachtungszeit)", font=ctk.CTkFont(weight="bold")).pack(pady=(10, 5))
+        loc_frame.pack(fill="x", padx=20, pady=6)
+        ctk.CTkLabel(loc_frame, text="Dein Standort (für Beobachtungszeit)", font=ctk.CTkFont(weight="bold")).pack(pady=(8, 4))
         
         coord_frame = ctk.CTkFrame(loc_frame, fg_color="transparent")
-        coord_frame.pack(pady=(0, 10))
+        coord_frame.pack(pady=(0, 8))
         
-        ctk.CTkLabel(coord_frame, text="Breitengrad (Lat):").grid(row=0, column=0, padx=5, pady=5)
+        ctk.CTkLabel(coord_frame, text="Breitengrad (Lat):").grid(row=0, column=0, padx=5, pady=4)
         self.entry_lat = ctk.CTkEntry(coord_frame, width=80)
-        self.entry_lat.grid(row=0, column=1, padx=5, pady=5)
+        self.entry_lat.grid(row=0, column=1, padx=5, pady=4)
         
-        ctk.CTkLabel(coord_frame, text="Längengrad (Lon):").grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkLabel(coord_frame, text="Längengrad (Lon):").grid(row=0, column=2, padx=5, pady=4)
         self.entry_lon = ctk.CTkEntry(coord_frame, width=80)
-        self.entry_lon.grid(row=0, column=3, padx=5, pady=5)
+        self.entry_lon.grid(row=0, column=3, padx=5, pady=4)
         
         current_lat, current_lon = self.logic.get_location()
         self.entry_lat.insert(0, str(current_lat))
         self.entry_lon.insert(0, str(current_lon))
         
         api_frame = ctk.CTkFrame(self)
-        api_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(api_frame, text="Astrometry.net API Key", font=ctk.CTkFont(weight="bold")).pack(pady=(10, 5))
+        api_frame.pack(fill="x", padx=20, pady=6)
+        ctk.CTkLabel(api_frame, text="Astrometry.net API Key", font=ctk.CTkFont(weight="bold")).pack(pady=(8, 4))
         
-        self.entry_api = ctk.CTkEntry(api_frame, width=300)
-        self.entry_api.pack(pady=(0, 10))
+        self.entry_api = ctk.CTkEntry(api_frame, width=320)
+        self.entry_api.pack(pady=(0, 8))
         current_api = self.logic.get_astrometry_key()
         if current_api: self.entry_api.insert(0, current_api)
         
         export_frame = ctk.CTkFrame(self)
-        export_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(export_frame, text="Standard Export-Ordner (Google Drive etc.)", font=ctk.CTkFont(weight="bold")).pack(pady=(10, 5))
+        export_frame.pack(fill="x", padx=20, pady=6)
+        ctk.CTkLabel(export_frame, text="Standard Export-Ordner (Google Drive etc.)", font=ctk.CTkFont(weight="bold")).pack(pady=(8, 4))
         
         path_frame = ctk.CTkFrame(export_frame, fg_color="transparent")
-        path_frame.pack(fill="x", padx=10, pady=(0, 10))
+        path_frame.pack(fill="x", padx=10, pady=(0, 8))
         
         self.entry_export = ctk.CTkEntry(path_frame)
         self.entry_export.pack(side="left", fill="x", expand=True, padx=(0, 10))
@@ -436,30 +436,46 @@ class SettingsWindow(ctk.CTkToplevel):
         if current_export: self.entry_export.insert(0, current_export)
         
         tools_frame = ctk.CTkFrame(self)
-        tools_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(tools_frame, text="Lokale Tools (ASTAP & Aladin)", font=ctk.CTkFont(weight="bold")).pack(pady=(10, 5))
+        tools_frame.pack(fill="x", padx=20, pady=6)
+        ctk.CTkLabel(tools_frame, text="Lokale Tools (Solver & Aladin)", font=ctk.CTkFont(weight="bold")).pack(pady=(8, 6))
         
         astap_sub = ctk.CTkFrame(tools_frame, fg_color="transparent")
-        astap_sub.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(astap_sub, text="ASTAP:", width=50, anchor="w").pack(side="left") 
+        astap_sub.pack(fill="x", padx=10, pady=3)
+        ctk.CTkLabel(astap_sub, text="ASTAP:", width=85, anchor="w").pack(side="left") 
         self.entry_astap = ctk.CTkEntry(astap_sub, placeholder_text="Pfad zur astap.exe")
         self.entry_astap.pack(side="left", fill="x", expand=True, padx=(0, 5))
         ctk.CTkButton(astap_sub, text="📂", width=30, command=lambda: self.browse_exe(self.entry_astap)).pack(side="right")
-        
         if hasattr(self.logic, 'get_astap_path'):
             self.entry_astap.insert(0, self.logic.get_astap_path())
+
+        saspro_sub = ctk.CTkFrame(tools_frame, fg_color="transparent")
+        saspro_sub.pack(fill="x", padx=10, pady=3)
+        ctk.CTkLabel(saspro_sub, text="SetiAstro:", width=85, anchor="w").pack(side="left") 
+        self.entry_saspro = ctk.CTkEntry(saspro_sub, placeholder_text="Pfad zur SetiAstroSuitePro.exe")
+        self.entry_saspro.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(saspro_sub, text="📂", width=30, command=lambda: self.browse_exe(self.entry_saspro)).pack(side="right")
+        if hasattr(self.logic, 'get_saspro_path'):
+            self.entry_saspro.insert(0, self.logic.get_saspro_path())
+
+        mode_sub = ctk.CTkFrame(tools_frame, fg_color="transparent")
+        mode_sub.pack(fill="x", padx=10, pady=4)
+        ctk.CTkLabel(mode_sub, text="Solver-Modus:", width=85, anchor="w").pack(side="left")
+        solver_modes = ["Auto (ASTAP → SASpro)", "Auto (SASpro → ASTAP)", "Nur SetiAstro (Gaia)", "Nur ASTAP"]
+        current_mode = self.logic.get_solver_mode() if hasattr(self.logic, 'get_solver_mode') else solver_modes[0]
+        self.solver_mode_var = ctk.StringVar(value=current_mode if current_mode in solver_modes else solver_modes[0])
+        self.combo_solver_mode = ctk.CTkOptionMenu(mode_sub, values=solver_modes, variable=self.solver_mode_var)
+        self.combo_solver_mode.pack(side="left", fill="x", expand=True)
         
         aladin_sub = ctk.CTkFrame(tools_frame, fg_color="transparent")
-        aladin_sub.pack(fill="x", padx=10, pady=(2, 10))
-        ctk.CTkLabel(aladin_sub, text="Aladin:", width=50, anchor="w").pack(side="left") 
+        aladin_sub.pack(fill="x", padx=10, pady=(3, 10))
+        ctk.CTkLabel(aladin_sub, text="Aladin:", width=85, anchor="w").pack(side="left") 
         self.entry_aladin = ctk.CTkEntry(aladin_sub, placeholder_text="Pfad zur Aladin.exe")
         self.entry_aladin.pack(side="left", fill="x", expand=True, padx=(0, 5))
         ctk.CTkButton(aladin_sub, text="📂", width=30, command=lambda: self.browse_exe(self.entry_aladin)).pack(side="right")
-        
         if hasattr(self.logic, 'get_aladin_path'):
             self.entry_aladin.insert(0, self.logic.get_aladin_path())
         
-        ctk.CTkButton(self, text="💾 Speichern", fg_color="green", hover_color="darkgreen", command=self.save_settings).pack(pady=20)
+        ctk.CTkButton(self, text="💾 Speichern", fg_color="green", hover_color="darkgreen", command=self.save_settings).pack(pady=15)
         
     def browse_export_path(self):
         from tkinter import filedialog
@@ -486,6 +502,10 @@ class SettingsWindow(ctk.CTkToplevel):
         self.logic.set_astrometry_key(self.entry_api.get().strip())
         self.logic.set_export_path(self.entry_export.get().strip())
         self.logic.set_astap_path(self.entry_astap.get().strip())
+        if hasattr(self.logic, 'set_saspro_path'):
+            self.logic.set_saspro_path(self.entry_saspro.get().strip())
+        if hasattr(self.logic, 'set_solver_mode'):
+            self.logic.set_solver_mode(self.solver_mode_var.get())
         self.logic.set_aladin_path(self.entry_aladin.get().strip())
         
         if self.on_save_callback:
@@ -565,3 +585,153 @@ class WimsImportWindow(ctk.CTkToplevel):
         self.grab_release()
         self.destroy()
         self.master.after(100, lambda: cb(selected))
+        
+    class CatalogEditorWindow(ctk.CTkToplevel):
+    def __init__(self, parent, logic):
+        super().__init__(parent)
+        self.logic = logic
+        self.title("✏️ Datenbank bearbeiten (catalogs.json)")
+        self.geometry("820x640")
+        self.lift()
+        self.attributes('-topmost', True)
+        self.after(200, lambda: self.attributes('-topmost', False))
+        self.focus_force()
+
+        import json
+        from tkinter import messagebox
+        self._json = json
+        self._messagebox = messagebox
+
+        self.data = {"common_names": {}, "includes": {}, "constellations": {}, "caldwell": {}}
+        if os.path.exists(self.logic.catalog_file):
+            try:
+                with open(self.logic.catalog_file, "r", encoding="utf-8") as f:
+                    loaded = self._json.load(f)
+                for k in self.data:
+                    if isinstance(loaded.get(k), dict):
+                        self.data[k] = dict(loaded[k])
+            except Exception as e:
+                self._messagebox.showerror("Fehler", f"Konnte catalogs.json nicht laden:\n{e}")
+
+        top = ctk.CTkFrame(self, fg_color="transparent")
+        top.pack(fill="x", padx=15, pady=(12, 5))
+        ctk.CTkLabel(top, text="Katalog-Datenbank bearbeiten", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
+
+        self.search_var = ctk.StringVar()
+        self.search_var.trace_add("write", lambda *_: self.refresh_active_tab())
+        ctk.CTkEntry(top, textvariable=self.search_var, placeholder_text="🔍 Filter...", width=220).pack(side="right")
+
+        self.tabview = ctk.CTkTabview(self, command=self.refresh_active_tab)
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=8)
+
+        self.tab_configs = {
+            "Synonyme (common_names)": ("common_names", "Name (z.B. horsehead)", "Katalog-ID (z.B. B 33)"),
+            "Verknüpfungen (includes)": ("includes", "Hauptobjekt (z.B. IC 434)", "Enthält (kommagetrennt, z.B. B 33, Barnard 33)"),
+            "Sternbilder (constellations)": ("constellations", "Ordnername (klein, z.B. orion)", "Anzeigename (z.B. Orion)"),
+            "Caldwell (caldwell)": ("caldwell", "Caldwell-Nr (z.B. 33)", "NGC/IC-Name (z.B. NGC 6992)")
+        }
+
+        self.tab_widgets = {}
+        for tab_title, (sec_key, ph_k, ph_v) in self.tab_configs.items():
+            tab = self.tabview.add(tab_title)
+
+            add_bar = ctk.CTkFrame(tab, fg_color="transparent")
+            add_bar.pack(fill="x", pady=(4, 8))
+            e_key = ctk.CTkEntry(add_bar, placeholder_text=ph_k, width=220)
+            e_key.pack(side="left", padx=(0, 6))
+            e_val = ctk.CTkEntry(add_bar, placeholder_text=ph_v)
+            e_val.pack(side="left", fill="x", expand=True, padx=(0, 6))
+            ctk.CTkButton(
+                add_bar, text="+ Speichern", width=100, fg_color="#2980b9",
+                command=lambda sk=sec_key, ek=e_key, ev=e_val: self.add_or_update_entry(sk, ek, ev)
+            ).pack(side="right")
+
+            scroll = ctk.CTkScrollableFrame(tab)
+            scroll.pack(fill="both", expand=True)
+            self.tab_widgets[sec_key] = {"e_key": e_key, "e_val": e_val, "scroll": scroll}
+
+        bottom = ctk.CTkFrame(self, fg_color="transparent")
+        bottom.pack(fill="x", padx=15, pady=(5, 14))
+        ctk.CTkButton(bottom, text="Schließen", fg_color="gray", width=120, command=self.destroy).pack(side="left")
+        ctk.CTkButton(
+            bottom, text="💾 Speichern & Index aktualisieren", fg_color="#27ae60", hover_color="#2ecc71",
+            width=240, command=self.save_and_reload
+        ).pack(side="right")
+
+        self.refresh_active_tab()
+
+    def refresh_active_tab(self):
+        tab_title = self.tabview.get()
+        sec_key = self.tab_configs[tab_title][0]
+        w = self.tab_widgets[sec_key]
+        scroll = w["scroll"]
+
+        for child in scroll.winfo_children():
+            child.destroy()
+
+        q = self.search_var.get().strip().lower()
+        items = sorted(self.data[sec_key].items(), key=lambda x: str(x[0]).lower())
+        shown = 0
+
+        for k, v in items:
+            v_str = ", ".join(v) if isinstance(v, list) else str(v)
+            if q and q not in str(k).lower() and q not in v_str.lower():
+                continue
+            row = ctk.CTkFrame(scroll, fg_color="#2b2b2b")
+            row.pack(fill="x", pady=2, padx=2)
+            ctk.CTkLabel(row, text=str(k), width=200, anchor="w", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(8, 6), pady=4)
+            ctk.CTkLabel(row, text=v_str, anchor="w").pack(side="left", fill="x", expand=True, padx=6)
+            ctk.CTkButton(
+                row, text="✎", width=30, height=24, fg_color="#34495e",
+                command=lambda key_s=k, val_s=v_str, sk=sec_key: self.fill_inputs(sk, key_s, val_s)
+            ).pack(side="right", padx=3, pady=3)
+            ctk.CTkButton(
+                row, text="✖", width=30, height=24, fg_color="#c0392b", hover_color="#962d22",
+                command=lambda key_s=k, sk=sec_key: self.delete_entry(sk, key_s)
+            ).pack(side="right", padx=(3, 0), pady=3)
+            shown += 1
+            if shown >= 150:
+                ctk.CTkLabel(scroll, text="... weitere Einträge bitte über das Filterfeld eingrenzen", text_color="gray").pack(pady=6)
+                break
+
+    def fill_inputs(self, sec_key, key_s, val_s):
+        w = self.tab_widgets[sec_key]
+        w["e_key"].delete(0, "end")
+        w["e_key"].insert(0, str(key_s))
+        w["e_val"].delete(0, "end")
+        w["e_val"].insert(0, str(val_s))
+
+    def add_or_update_entry(self, sec_key, e_key, e_val):
+        k = e_key.get().strip()
+        v = e_val.get().strip()
+        if not k or not v:
+            return
+        if sec_key == "common_names":
+            k = k.lower()
+        elif sec_key == "constellations":
+            k = k.lower()
+        if sec_key == "includes":
+            self.data[sec_key][k] = [x.strip() for x in v.split(",") if x.strip()]
+        else:
+            self.data[sec_key][k] = v
+        e_key.delete(0, "end")
+        e_val.delete(0, "end")
+        self.refresh_active_tab()
+
+    def delete_entry(self, sec_key, key_s):
+        if key_s in self.data[sec_key]:
+            del self.data[sec_key][key_s]
+            self.refresh_active_tab()
+
+    def save_and_reload(self):
+        try:
+            with open(self.logic.catalog_file, "w", encoding="utf-8") as f:
+                self._json.dump(self.data, f, indent=4, ensure_ascii=False)
+            self.logic.load_catalogs()
+            self.logic.scanner.includes_map = self.logic.includes_map
+            if hasattr(self.master, "refresh_library"):
+                self.master.refresh_library()
+            self._messagebox.showinfo("Gespeichert", "Datenbank gespeichert und Index wird aktualisiert!")
+            self.destroy()
+        except Exception as e:
+            self._messagebox.showerror("Fehler", f"Speichern fehlgeschlagen:\n{e}")

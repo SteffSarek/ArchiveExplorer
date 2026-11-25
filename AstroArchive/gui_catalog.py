@@ -310,7 +310,7 @@ class CatalogOverviewWindow(ctk.CTkToplevel):
         if cache_key in self.logic.list_cache: del self.logic.list_cache[cache_key]
 
         if self.catalog_name == "Beobachtungsliste": self.data_list = self.logic.get_todo_objects()
-        elif self.catalog_name in ["Messier", "Caldwell", "NGC", "Alle"]: self.data_list = self.logic.get_catalog_objects(self.catalog_name)
+        elif self.catalog_name in ["Messier", "Caldwell", "NGC", "Alle", "Letzter Import"]: self.data_list = self.logic.get_catalog_objects(self.catalog_name)
         else: self.data_list = self.logic.get_constellation_objects(self.catalog_name)
 
         threading.Thread(target=self._run_initialization, daemon=True).start()

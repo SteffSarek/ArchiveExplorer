@@ -76,6 +76,12 @@ class AstroLogic:
         self.exporter = HTMLExporter(self)
         self.mobile_exporter = MobileExporter(self)
         self.atlas_exporter = AtlasExporter(self)
+        
+        self.known_library_file = os.path.join(self.app_path, "known_library.json")
+        self.last_import_keys = []
+        self.last_scan_new_images = []
+        self.last_scan_new_obj_count = 0
+        self._load_known_library()
 
     def _get_app_path(self):
         if getattr(sys, 'frozen', False): return os.path.dirname(sys.executable)
@@ -139,6 +145,40 @@ class AstroLogic:
                 with open(self.config_file, "r") as f: data = json.load(f)
             except: pass
         data["aladin_path"] = path
+        with open(self.config_file, "w") as f: json.dump(data, f, indent=4)
+        
+    def get_saspro_path(self):
+        data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r") as f: data = json.load(f)
+            except: pass
+        return data.get("saspro_path", "")
+
+    def set_saspro_path(self, path):
+        data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r") as f: data = json.load(f)
+            except: pass
+        data["saspro_path"] = path
+        with open(self.config_file, "w") as f: json.dump(data, f, indent=4)
+
+    def get_solver_mode(self):
+        data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r") as f: data = json.load(f)
+            except: pass
+        return data.get("solver_mode", "Auto (ASTAP → SASpro)")
+
+    def set_solver_mode(self, mode):
+        data = {}
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r") as f: data = json.load(f)
+            except: pass
+        data["solver_mode"] = mode
         with open(self.config_file, "w") as f: json.dump(data, f, indent=4)
 
     def run_local_solve_and_aladin(self, file_path, coords_str=None, callback=None):
@@ -456,29 +496,69 @@ class AstroLogic:
             except: return False
         return False
 
+    def _strip_telescope_from_name(self, name):
+        cleaned = re.sub(r'(?i)\b(?:seestar\s*s\d+(?:\s*pro)?|s30(?:\s*pro)?|dwarf\s*(?:ii|iii|\d+))\b', '', name)
+        return re.sub(r'\s+', ' ', cleaned).strip(" _-")
+
     def _get_clean_key(self, name):
-        match = re.search(r'((?:NGC|M|IC|C)[_\s-]*\d+)', name, re.IGNORECASE)
-        if match: return normalize_string(re.sub(r'[_\s-]', '', match.group(1)))
-        return normalize_string(name.split("(")[0])
+        match = re.search(r'((?:NGC|M|IC|C|Barnard|B|vdB|Sh2|LDN|LBN)[_\s-]*\d+)', name, re.IGNORECASE)
+        if match:
+            raw_id = re.sub(r'[_\s-]', '', match.group(1)).lower()
+            if raw_id.startswith("barnard"):
+                return "b" + raw_id[7:]
+            return raw_id
+        return normalize_string(self._strip_telescope_from_name(name).split("(")[0])
 
     def _get_all_aliases(self, clean_key):
-        valid_keys = set([clean_key])
-        for c_num, ngc_name in self.caldwell_map.items():
-            c_key = f"c{c_num}"
-            norm_ngc = normalize_string(ngc_name)
-            if c_key == clean_key or norm_ngc == clean_key:
-                valid_keys.add(c_key)
-                valid_keys.add(norm_ngc)
-                
-        current_keys = list(valid_keys)
-        for k in current_keys:
-            for common_k, common_v in self.common_names.items():
-                norm_k = normalize_string(common_k)
-                norm_v = normalize_string(common_v)
-                if norm_k == k: valid_keys.add(norm_v)
-                if norm_v == k: valid_keys.add(norm_k)
-                
-        return list(valid_keys)
+        valid_keys = set()
+        if not clean_key:
+            return []
+        valid_keys.add(clean_key)
+
+        # B33 <-> Barnard33 automatisch verknüpfen
+        b_match = re.match(r'^(?:b|barnard)(\d+)$', clean_key)
+        if b_match:
+            valid_keys.add(f"b{b_match.group(1)}")
+            valid_keys.add(f"barnard{b_match.group(1)}")
+
+        # Mehrere Runden über Caldwell, common_names und includes verknüpfen
+        for _ in range(3):
+            before = len(valid_keys)
+            snapshot = list(valid_keys)
+
+            for c_num, ngc_name in self.caldwell_map.items():
+                c_key = f"c{c_num}"
+                norm_ngc = normalize_string(ngc_name)
+                if c_key in valid_keys or norm_ngc in valid_keys:
+                    valid_keys.add(c_key)
+                    valid_keys.add(norm_ngc)
+
+            for k in snapshot:
+                for common_k, common_v in self.common_names.items():
+                    norm_k = normalize_string(common_k)
+                    norm_v = normalize_string(common_v)
+                    if norm_k == k: valid_keys.add(norm_v)
+                    if norm_v == k: valid_keys.add(norm_k)
+
+                for parent_obj, children in self.includes_map.items():
+                    norm_p = self._get_clean_key(parent_obj)
+                    norm_children = [self._get_clean_key(ch) for ch in children]
+                    if k == norm_p:
+                        valid_keys.update(norm_children)
+                    if k in norm_children:
+                        valid_keys.add(norm_p)
+
+            # B/Barnard-Varianten auch für neu gefundene Aliase ergänzen
+            for k in list(valid_keys):
+                bm = re.match(r'^(?:b|barnard)(\d+)$', k)
+                if bm:
+                    valid_keys.add(f"b{bm.group(1)}")
+                    valid_keys.add(f"barnard{bm.group(1)}")
+
+            if len(valid_keys) == before:
+                break
+
+        return [k for k in valid_keys if k]
 
     def load_notes(self):
         if os.path.exists(self.notes_file):
@@ -663,11 +743,26 @@ class AstroLogic:
 
         return list(set(tags))
 
-    def get_tags(self, obj_name):
-        k = self._get_clean_key(obj_name)
-        manual_tags = self.user_notes.get(k, {}).get("tags", [])
-        auto_tags = self._get_auto_tags(obj_name) 
-        
+    def get_tags(self, obj_name, extra_name=None):
+        keys_to_check = set()
+        for candidate in (obj_name, extra_name):
+            if not candidate:
+                continue
+            k = self._get_clean_key(candidate)
+            norm = normalize_string(candidate)
+            keys_to_check.add(k)
+            keys_to_check.add(norm)
+            keys_to_check.update(self._get_all_aliases(k))
+
+        manual_tags = []
+        seen_lower = set()
+        for k in keys_to_check:
+            for t in self.user_notes.get(k, {}).get("tags", []):
+                if t.lower() not in seen_lower:
+                    seen_lower.add(t.lower())
+                    manual_tags.append(t)
+
+        auto_tags = self._get_auto_tags(obj_name)
         return {"auto": auto_tags, "manual": manual_tags}
 
     def add_tag(self, obj_name, tag):
@@ -689,11 +784,16 @@ class AstroLogic:
 
     def remove_tag(self, obj_name, tag):
         k = self._get_clean_key(obj_name)
-        if k in self.user_notes and "tags" in self.user_notes[k]:
-            if tag in self.user_notes[k]["tags"]:
-                self.user_notes[k]["tags"].remove(tag)
-                self.list_cache = {}
-                return self._save_notes_file()
+        keys_to_clean = set([k, normalize_string(obj_name)]) | set(self._get_all_aliases(k))
+        changed = False
+        for ck in keys_to_clean:
+            if ck in self.user_notes and "tags" in self.user_notes[ck]:
+                if tag in self.user_notes[ck]["tags"]:
+                    self.user_notes[ck]["tags"].remove(tag)
+                    changed = True
+        if changed:
+            self.list_cache = {}
+            return self._save_notes_file()
         return False
 
     def set_object_type(self, obj_name, new_type):
@@ -904,10 +1004,129 @@ class AstroLogic:
         self.list_cache["todo"] = results
         return results
 
+    def _load_known_library(self):
+        self.known_objects = set()
+        self.known_images = set()
+        self.known_base_folder = ""
+        if os.path.exists(self.known_library_file):
+            try:
+                with open(self.known_library_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.known_base_folder = data.get("base_folder", "")
+                self.known_objects = set(data.get("objects", []))
+                self.known_images = set(data.get("images", []))
+                self.last_import_keys = data.get("last_import", [])
+            except Exception:
+                pass
+
+    def _save_known_library(self):
+        try:
+            data = {
+                "base_folder": self.base_folder or "",
+                "objects": sorted(list(self.known_objects)),
+                "images": sorted(list(self.known_images)),
+                "last_import": self.last_import_keys
+            }
+            with open(self.known_library_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
     def scan_library(self):
         self.list_cache = {}
         self.index, self.constellations, msg = self.scanner.scan(self.base_folder)
+        self.last_scan_new_images = []
+        self.last_scan_new_obj_count = 0
+
+        if not self.index:
+            return msg
+
+        current_objects = set()
+        current_images = set()
+        path_to_key = {}
+        new_import_keys = []
+        seen_import_paths = set()
+        new_atlas_images = []
+        seen_new_imgs = set()
+
+        norm_base = os.path.normpath(self.base_folder).lower() if self.base_folder else ""
+        known_base_norm = os.path.normpath(self.known_base_folder).lower() if self.known_base_folder else ""
+        is_baseline = (not os.path.exists(self.known_library_file)) or (norm_base != known_base_norm)
+
+        for key, data in self.index.items():
+            norm_p = os.path.normpath(data["path"]).lower() if data.get("path") else key
+            if norm_p not in path_to_key:
+                path_to_key[norm_p] = key
+            current_objects.add(norm_p)
+
+            obj_is_new = (not is_baseline) and (norm_p not in self.known_objects)
+            obj_has_new_img = False
+
+            for img_p in data.get("images", []):
+                norm_img = os.path.normpath(img_p).lower()
+                current_images.add(norm_img)
+                if (not is_baseline) and (norm_img not in self.known_images):
+                    obj_has_new_img = True
+                    if norm_img not in seen_new_imgs:
+                        seen_new_imgs.add(norm_img)
+                        ext = os.path.splitext(img_p)[1].lower()
+                        is_starless = "starless" in os.path.basename(img_p).lower()
+                        if ext in [".jpg", ".jpeg"] and not is_starless and self.atlas_exporter.is_included_in_atlas(img_p):
+                            if not self.atlas_exporter.get_cached_wcs(img_p):
+                                new_atlas_images.append((key, img_p))
+
+            if (obj_is_new or obj_has_new_img) and norm_p not in seen_import_paths:
+                seen_import_paths.add(norm_p)
+                new_import_keys.append(path_to_key[norm_p])
+                if obj_is_new:
+                    self.last_scan_new_obj_count += 1
+
+        if is_baseline:
+            self.known_objects = current_objects
+            self.known_images = current_images
+            self.known_base_folder = self.base_folder or ""
+            self.last_import_keys = []
+            self._save_known_library()
+        elif new_import_keys or current_objects != self.known_objects or current_images != self.known_images:
+            self.known_objects = current_objects
+            self.known_images = current_images
+            self.known_base_folder = self.base_folder or ""
+            if new_import_keys:
+                self.last_import_keys = new_import_keys
+                self.last_scan_new_images = new_atlas_images
+            self._save_known_library()
+
         return msg
+
+    def get_last_import_objects(self):
+        results = []
+        seen_paths = set()
+        for k in self.last_import_keys:
+            if k in self.index:
+                d = self.index[k]
+                norm_p = os.path.normpath(d["path"]).lower() if d.get("path") else k
+                if norm_p in seen_paths:
+                    continue
+                seen_paths.add(norm_p)
+                pretty = generate_pretty_name(d["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
+                c, dt, ts = get_fits_stats(d["path"])
+                otype = self.determine_object_type(pretty, pretty)
+                results.append({
+                    "name": f"{pretty} ({format_telescope(d['telescope'])})",
+                    "sort_key": pretty,
+                    "found": True,
+                    "type": otype,
+                    "telescope": format_telescope(d["telescope"]),
+                    "path": d["path"],
+                    "image": d["image"],
+                    "images": d.get("images", []),
+                    "fits_count": c,
+                    "date": dt,
+                    "raw_date": ts,
+                    "internal_id": k
+                })
+        results.sort(key=lambda x: x["sort_key"].lower())
+        return results
 
     def get_library_stats(self):
         found_ids = set()
@@ -1032,6 +1251,8 @@ class AstroLogic:
         return results
 
     def get_catalog_objects(self, catalog_filter):
+        if catalog_filter == "Letzter Import":
+            return self.get_last_import_objects()
         if catalog_filter in self.list_cache: return self.list_cache[catalog_filter]
         results = []
         found_map = {}
@@ -1140,190 +1361,268 @@ class AstroLogic:
 
     def get_object_data(self, search_term, filter_mode="Alle", show_seestar=True, show_dwarf=True, show_s30=True, exact_match=False):
         clean_search_key = search_term.lower().strip()
-        if clean_search_key in self.index:
+
+        # 1. Direkter Detail-Abruf (nur bei exaktem Klick aus Liste/Katalog/Karte!)
+        if exact_match and clean_search_key in self.index:
             best = self.index[clean_search_key]
             pretty_n = generate_pretty_name(best["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
-            search_name_clean = pretty_n 
-            match_id = re.search(r'((?:NGC|M|IC|C)\s*\d+)', pretty_n, re.IGNORECASE)
-            if match_id: search_name_clean = match_id.group(1)
-            else: search_name_clean = pretty_n.split("-")[0].split("(")[0].strip()
-            
+            search_name_clean = pretty_n
+            match_id = re.search(r'((?:NGC|M|IC|C|Barnard|B|vdB|Sh2|LDN|LBN)[_\s-]*\d+)', pretty_n, re.IGNORECASE)
+            if match_id:
+                search_name_clean = match_id.group(1)
+            else:
+                search_name_clean = self._strip_telescope_from_name(pretty_n.split(" - ")[0].split("(")[0])
+
             coords = "RA: --- | DEC: ---"; ra_dec = None; dec_dec = None; status_txt = "Im Archiv gefunden."
             if best["fits_sample"]:
                 c_str, r_d, d_d, ok = read_fits_coords(best["fits_sample"])
-                if ok: coords = c_str; ra_dec = r_d; dec_dec = d_d; status_txt = "Koordinaten aus FITS (lokal)."
-            
+                if ok:
+                    coords = c_str; ra_dec = r_d; dec_dec = d_d; status_txt = "Koordinaten aus FITS (lokal)."
+
             if "---" in coords:
                 try:
-                    clean_cache_key = normalize_string(search_name_clean)
+                    clean_cache_key = self._get_clean_key(search_name_clean)
                     if clean_cache_key in self.coord_cache:
                         cached = self.coord_cache[clean_cache_key]
                         coords = cached["coords_str"]; ra_dec = cached["ra"]; dec_dec = cached["dec"]; status_txt = "Koordinaten aus Cache."
                     else:
-                        coord = SkyCoord.from_name(search_name_clean)
+                        online_query = re.sub(r'(?i)^B\s*(\d+)$', r'Barnard \1', search_name_clean.strip())
+                        coord = SkyCoord.from_name(online_query)
                         ra_dec = coord.ra.deg; dec_dec = coord.dec.deg
                         coords = f"RA: {coord.ra.to_string(unit=u.hour, sep=' ', pad=True, precision=0)} | DEC: {coord.dec.to_string(sep=' ', pad=True, alwayssign=True, precision=0)}"
                         status_txt = "Koordinaten online abgerufen."
-                        self.save_to_cache(search_name_clean, coords, ra_dec, dec_dec)
-                except: pass
+                        self.save_to_cache(clean_cache_key, coords, ra_dec, dec_dec)
+                except Exception:
+                    pass
 
             note = self.get_note(best["original_name"])
-            todo = self.get_todo_status(best["original_name"]) 
-            
-            result = {"found_locally": True, "internal_id": clean_search_key, "constellation_content": [], "is_constellation": False, "path": best["path"], "image": best["image"], "images": best.get("images", []), "name": pretty_n, "parent_constellation": self.constellation_names.get(best["parent"], best["parent"].title()), "wiki_url": clean_name_for_wiki(best["original_name"]), "status_text": status_txt, "user_note": note, "todo_status": todo, "coords": coords, "ra_decimal": ra_dec, "dec_decimal": dec_dec}
-            return result
+            todo = self.get_todo_status(best["original_name"])
+            return {
+                "found_locally": True, "internal_id": clean_search_key, "constellation_content": [],
+                "is_constellation": False, "path": best["path"], "image": best["image"],
+                "images": best.get("images", []), "name": pretty_n,
+                "parent_constellation": self.constellation_names.get(best["parent"], best["parent"].title()),
+                "wiki_url": clean_name_for_wiki(best["original_name"]), "status_text": status_txt,
+                "user_note": note, "todo_status": todo, "coords": coords, "ra_decimal": ra_dec, "dec_decimal": dec_dec
+            }
 
+        # 2. Exakter Treffer über den Anzeigenamen (z. B. Klick in Trefferliste)
         target_direct_key = None
         search_norm = normalize_string(search_term)
-        for key, data in self.index.items():
-            pretty = generate_pretty_name(data["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
-            tel_suffix = f" ({format_telescope(data['telescope'])})"
-            full_display_name = pretty + tel_suffix
-            display_norm = normalize_string(full_display_name)
-            if display_norm == search_norm: target_direct_key = key; break
-        if target_direct_key: return self.get_object_data(target_direct_key)
+        if exact_match:
+            for key, data in self.index.items():
+                pretty = generate_pretty_name(data["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
+                tel_suffix = f" ({format_telescope(data['telescope'])})"
+                if normalize_string(pretty + tel_suffix) == search_norm or normalize_string(pretty) == search_norm:
+                    target_direct_key = key
+                    break
+            if target_direct_key:
+                return self.get_object_data(target_direct_key, exact_match=True)
 
+        # 3. Suchbegriff & alle verknüpften Aliase aufbauen
         raw_search = search_term.lower().strip()
         norm_search = normalize_string(search_term)
-        search_candidates = []
+        search_candidates = set()
+
         strict_prefix = None
         if raw_search.isdigit():
             if filter_mode == "Messier": strict_prefix = "m" + raw_search
             elif filter_mode == "NGC": strict_prefix = "ngc" + raw_search
             elif filter_mode == "Caldwell": strict_prefix = "c" + raw_search
-        
+
         c_num = None
         if filter_mode == "Caldwell" and raw_search.isdigit(): c_num = raw_search
         elif norm_search.startswith("c") and norm_search[1:].isdigit(): c_num = norm_search[1:]
-        if c_num and c_num in self.caldwell_map: search_candidates.append(normalize_string(self.caldwell_map[c_num]))
-        if norm_search in self.reverse_caldwell_map: search_candidates.append(f"c{self.reverse_caldwell_map[norm_search]}")
+        if c_num and c_num in self.caldwell_map:
+            search_candidates.add(normalize_string(self.caldwell_map[c_num]))
+
+        # Direkte ID-Aliase (z. B. M 31, B 33, Barnard 33, IC 434)
+        base_clean = self._get_clean_key(search_term)
+        if base_clean:
+            search_candidates.update(self._get_all_aliases(base_clean))
+        search_candidates.update(self._get_all_aliases(norm_search))
+
+        # Common-Names-Treffer (z. B. "horsehead" -> B33 -> Barnard33, IC434, ...)
         for common, cid in self.common_names.items():
             c_low = common.lower()
             norm_c = normalize_string(common)
+            matched_common = False
             if c_low == raw_search or norm_c == norm_search or fnmatch.fnmatch(c_low, raw_search):
-                search_candidates.append(normalize_string(cid))
-            elif raw_search in c_low:
-                search_candidates.append(normalize_string(cid))
-            elif c_low in raw_search:
-                if len(c_low) > 3 or re.search(r'\b' + re.escape(c_low) + r'\b', raw_search):
-                    search_candidates.append(normalize_string(cid))
+                matched_common = True
+            elif len(raw_search) >= 3 and raw_search in c_low:
+                matched_common = True
+            elif len(c_low) >= 4 and c_low in raw_search:
+                matched_common = True
+
+            if matched_common:
+                cid_clean = self._get_clean_key(cid)
+                search_candidates.add(cid_clean)
+                search_candidates.update(self._get_all_aliases(cid_clean))
 
         pretty_fallback_name = generate_pretty_name(search_term, self.caldwell_map, self.reverse_caldwell_map, self.common_names)
-        
-        result = {"found_locally": False, "path": None, "image": None, "images": [], "coords": "RA: --- | DEC: ---", "ra_decimal": None, "dec_decimal": None, "wiki_url": "", "name": pretty_fallback_name, "status_text": "", "is_constellation": False, "constellation_content": [], "parent_constellation": None, "user_note": "", "todo_status": False}
-        
+        result = {
+            "found_locally": False, "path": None, "image": None, "images": [],
+            "coords": "RA: --- | DEC: ---", "ra_decimal": None, "dec_decimal": None,
+            "wiki_url": "", "name": pretty_fallback_name, "status_text": "",
+            "is_constellation": False, "constellation_content": [], "parent_constellation": None,
+            "user_note": "", "todo_status": False
+        }
+
+        # 4. Sternbild-Suche
         found_const = None
         if not exact_match and filter_mode in ["Sternbild", "Alle"]:
-            if raw_search in self.constellations: found_const = raw_search
+            if raw_search in self.constellations:
+                found_const = raw_search
             else:
                 for internal, display in self.constellation_names.items():
-                    if raw_search in display.lower(): found_const = internal; break
+                    if raw_search == display.lower() or (len(raw_search) >= 3 and raw_search in display.lower()):
+                        found_const = internal
+                        break
         if found_const:
-            result.update({"found_locally": True, "is_constellation": True, "name": self.constellation_names.get(found_const, found_const.title()), "status_text": "Sternbild gefunden.", "wiki_url": f"https://de.wikipedia.org/wiki/{found_const.capitalize()}"})
-            raw_c = self.constellations.get(found_const, []) 
-            result["constellation_content"] = [item["name"] for item in raw_c if (item["type"] == "seestar" and show_seestar) or (item["type"] == "dwarf" and show_dwarf) or (item["type"] == "s30" and show_s30)]
-            if raw_c: result["path"] = os.path.dirname(self.index[raw_c[0]["name"].lower()]["path"])
-            else: result["status_text"] = "Sternbild bekannt, aber keine lokalen Dateien."; result["found_locally"] = False 
+            result.update({
+                "found_locally": True, "is_constellation": True,
+                "name": self.constellation_names.get(found_const, found_const.title()),
+                "status_text": "Sternbild gefunden.",
+                "wiki_url": f"https://de.wikipedia.org/wiki/{found_const.capitalize()}"
+            })
+            raw_c = self.constellations.get(found_const, [])
+            result["constellation_content"] = [
+                item["name"] for item in raw_c
+                if (item["type"] == "seestar" and show_seestar)
+                or (item["type"] == "dwarf" and show_dwarf)
+                or (item["type"] == "s30" and show_s30)
+                or item["type"] == "other"
+            ]
+            if raw_c:
+                result["path"] = os.path.dirname(self.index[raw_c[0]["name"].lower()]["path"])
+            else:
+                result["status_text"] = "Sternbild bekannt, aber keine lokalen Dateien."
+                result["found_locally"] = False
             return result
 
+        # 5. Vollständige Archiv-Suche über alle Objekte, Tags, Aliase, Notizen & Bild-Dateinamen
         is_id_search = re.search(r'^[a-zA-Z]+\s*\d+$', raw_search) is not None
         possible = []
+
         for key, data in self.index.items():
-            match = False 
-            tag_match = False
-            idx_clean_key = normalize_string(key)
-            all_tags_dict = self.get_tags(key)
+            if filter_mode == "Messier" and not key.startswith("m"): continue
+            if filter_mode == "NGC" and not key.startswith("ngc"): continue
+            if filter_mode == "Caldwell" and not key.startswith("c"): continue
+
+            skip = False
+            if data["telescope"] == "seestar" and not show_seestar: skip = True
+            if data["telescope"] == "dwarf" and not show_dwarf: skip = True
+            if data["telescope"] == "s30" and not show_s30: skip = True
+            if skip:
+                continue
+
+            pretty_entry = generate_pretty_name(data["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
+            norm_k = normalize_string(key)
+            norm_pretty = normalize_string(pretty_entry)
+            entry_clean_id = self._get_clean_key(data["original_name"])
+            match = False
+
+            # A) Tags (Auto + Manuell, inkl. Aliase)
+            all_tags_dict = self.get_tags(key, extra_name=pretty_entry)
             combined_tags = all_tags_dict["auto"] + all_tags_dict["manual"]
             for t in combined_tags:
-                if raw_search in t.lower():
-                    tag_match = True
+                t_low = t.lower()
+                if raw_search in t_low or normalize_string(t) in search_candidates:
+                    match = True
                     break
-            
-            check = True
-            if search_candidates: check = False
-            
-            if tag_match:
-                match = True 
-            
-            if not match: 
-                if filter_mode == "Messier" and not key.startswith("m"): continue
-                if filter_mode == "NGC" and not key.startswith("ngc"): continue
-                if filter_mode == "Caldwell" and not key.startswith("c"): continue
-                
-                norm_k = normalize_string(key)
-                
+
+            # B) Notiz-Text durchsuchen
+            if not match and len(raw_search) >= 3:
+                note_txt = self.get_note(data["original_name"]) or self.get_note(pretty_entry)
+                if note_txt and raw_search in note_txt.lower():
+                    match = True
+
+            # C) Bild-Dateinamen im Ordner durchsuchen
+            if not match and len(raw_search) >= 3:
+                for img_p in data.get("images", []):
+                    if raw_search in os.path.basename(img_p).lower():
+                        match = True
+                        break
+
+            # D) Direkter Name, Wildcard oder ID
+            if not match:
                 if exact_match:
-                    for alias in search_candidates:
-                        if alias == norm_k: match = True; break
-                        if norm_k.startswith(alias):
-                            suffix = norm_k[len(alias):]
-                            if not suffix or not suffix[0].isdigit(): match = True; break
-                    
-                    if not match:
-                        if norm_k.startswith(norm_search):
-                            suffix = norm_k[len(norm_search):]
-                            if not suffix or not suffix[0].isdigit(): match = True
+                    if norm_k.startswith(norm_search) and (len(norm_k) == len(norm_search) or not norm_k[len(norm_search)].isdigit()):
+                        match = True
                 else:
                     if strict_prefix and norm_k.startswith(strict_prefix):
                         suffix = norm_k[len(strict_prefix):]
-                        if not suffix or not suffix[0].isdigit(): match = True
-                    elif fnmatch.fnmatch(key, raw_search): match = True
-                    elif is_id_search:
-                        if norm_k == norm_search: 
+                        if not suffix or not suffix[0].isdigit():
                             match = True
-                        elif norm_k.startswith(norm_search):
-                            suffix = norm_k[len(norm_search):]
-                            if not suffix or not suffix[0].isdigit(): match = True
-                    else:
-                        if norm_search in norm_k: match = True
-                    
-                    if not match:
-                        for alias in search_candidates:
-                            if alias == norm_k: match = True; break 
-                            if norm_k.startswith(alias) and (len(norm_k) == len(alias) or not norm_k[len(alias)].isdigit()): match = True; break
+                    elif fnmatch.fnmatch(key, raw_search):
+                        match = True
+                    elif is_id_search:
+                        if norm_k == norm_search or (norm_k.startswith(norm_search) and not norm_k[len(norm_search)].isdigit()):
+                            match = True
+                    elif norm_search in norm_k or norm_search in norm_pretty:
+                        match = True
+
+            # E) Verknüpfte Aliase (Horsehead <-> B33 <-> Barnard33 <-> IC434)
+            if not match and not exact_match:
+                for alias in search_candidates:
+                    if not alias:
+                        continue
+                    if alias == entry_clean_id or alias == norm_k:
+                        match = True
+                        break
+                    if len(alias) >= 3 and (norm_k.startswith(alias) or norm_pretty.startswith(alias)):
+                        tail = norm_k[len(alias):] if norm_k.startswith(alias) else norm_pretty[len(alias):]
+                        if not tail or not tail[0].isdigit():
+                            match = True
+                            break
 
             if match:
-                skip = False
-                if data["telescope"] == "seestar" and not show_seestar: skip = True
-                if data["telescope"] == "dwarf" and not show_dwarf: skip = True
-                if data["telescope"] == "s30" and not show_s30: skip = True
-                if not skip: possible.append(key)
+                possible.append(key)
 
         if possible:
             result["found_locally"] = True
             final_candidates = list(possible)
             if len(possible) > 1:
-                telescope_found_in_search = False
-                filtered_candidates = []
-                for k in possible:
-                    tel_str = format_telescope(self.index[k]["telescope"]).lower()
-                    if tel_str in raw_search: filtered_candidates.append(k); telescope_found_in_search = True
-                if telescope_found_in_search and filtered_candidates: final_candidates = filtered_candidates
-            content_list = []
-            for k in final_candidates:
-                base_name = generate_pretty_name(self.index[k]["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
-                tel_suffix = f" ({format_telescope(self.index[k]['telescope'])})"
-                content_list.append(base_name + tel_suffix)
-            result["constellation_content"] = sorted(content_list)
-            unique_paths = set()
-            for k in final_candidates: p = self.index[k]["path"]; unique_paths.add(os.path.normpath(p).lower())
-            paths_match = len(unique_paths) == 1
-            target_key = None
-            if len(final_candidates) == 1: 
-                target_key = final_candidates[0]
-            elif paths_match: 
-                target_key = final_candidates[0]
+                filtered_candidates = [
+                    k for k in possible
+                    if format_telescope(self.index[k]["telescope"]).lower() in raw_search
+                ]
+                if filtered_candidates:
+                    final_candidates = filtered_candidates
 
-            if len(final_candidates) > 1 and not target_key: 
-                result.update({"is_constellation": True, "status_text": f"{len(final_candidates)} Treffer gefunden.", "name": f"Suche: '{search_term}'"})
+            # Nach echtem Ordner-Pfad deduplizieren & Ordner mit Bildern nach oben sortieren!
+            unique_by_path = {}
+            for k in final_candidates:
+                p_norm = os.path.normpath(self.index[k]["path"]).lower()
+                if p_norm not in unique_by_path or "(in " not in self.index[k]["original_name"]:
+                    unique_by_path[p_norm] = k
+
+            dedup_keys = list(unique_by_path.values())
+            dedup_keys.sort(key=lambda k: (0 if self.index[k].get("images") else 1, self.index[k]["original_name"].lower()))
+
+            if len(dedup_keys) > 1:
+                content_list = []
+                for k in dedup_keys:
+                    base_name = generate_pretty_name(self.index[k]["original_name"], self.caldwell_map, self.reverse_caldwell_map, self.common_names)
+                    tel_suffix = f" ({format_telescope(self.index[k]['telescope'])})"
+                    img_cnt = len(self.index[k].get("images", []))
+                    badge = f"  [📷 {img_cnt}]" if img_cnt > 0 else "  [⚠️ kein Bild]"
+                    content_list.append(base_name + tel_suffix + badge)
+                result.update({
+                    "is_constellation": True,
+                    "constellation_content": content_list,
+                    "status_text": f"{len(dedup_keys)} Treffer gefunden.",
+                    "name": f"Suche: '{search_term}'"
+                })
+                return result
             else:
-                if not target_key: target_key = final_candidates[0]
-                return self.get_object_data(target_key)
-        
+                return self.get_object_data(dedup_keys[0], exact_match=True)
+
+        # 6. Online-Fallback, wenn lokal nichts gefunden wurde
         if not result["coords"] or "---" in result["coords"]:
             try:
                 s_for = search_term
-                match_id = re.search(r'^((?:NGC|IC|M|C)\s*\d+)', search_term, re.IGNORECASE)
+                match_id = re.search(r'^((?:NGC|IC|M|C|Barnard|B|vdB|Sh2|LDN|LBN)[_\s-]*\d+)', search_term, re.IGNORECASE)
                 if match_id:
                     s_for = match_id.group(1).upper()
                 else:
@@ -1332,54 +1631,52 @@ class AstroLogic:
 
                 c_check = normalize_string(s_for)
                 c_num_match = re.match(r'^c(\d+)$', c_check)
-                if c_num_match:
-                    c_num = c_num_match.group(1)
-                    if c_num in self.caldwell_map: s_for = self.caldwell_map[c_num] 
-                clean_search_key = normalize_string(s_for)
-                
-                if clean_search_key in self.coord_cache:
-                    cached = self.coord_cache[clean_search_key]
+                if c_num_match and c_num_match.group(1) in self.caldwell_map:
+                    s_for = self.caldwell_map[c_num_match.group(1)]
+                clean_cache_k = self._get_clean_key(s_for)
+
+                if clean_cache_k in self.coord_cache:
+                    cached = self.coord_cache[clean_cache_k]
                     result["coords"] = cached["coords_str"]; result["ra_decimal"] = cached["ra"]; result["dec_decimal"] = cached["dec"]; result["status_text"] = "Koordinaten aus Cache (schnell)."
                 else:
                     coord = None
                     try:
-                        coord = SkyCoord.from_name(s_for)
-                    except:
+                        online_q = re.sub(r'(?i)^B\s*(\d+)$', r'Barnard \1', s_for.strip())
+                        coord = SkyCoord.from_name(online_q)
+                    except Exception:
                         pass
-                        
+
                     if not coord and not result["found_locally"]:
                         for com, cid in self.common_names.items():
                             c_low = com.lower()
                             s_low = search_term.lower()
-                            is_match = False
-                            
-                            if c_low == s_low: is_match = True
-                            elif c_low in s_low:
-                                if len(c_low) > 3 or re.search(r'\b' + re.escape(c_low) + r'\b', s_low):
-                                    is_match = True
-                                    
-                            if is_match:
+                            if c_low == s_low or (c_low in s_low and (len(c_low) > 3 or re.search(r'\b' + re.escape(c_low) + r'\b', s_low))):
                                 s_for = cid
                                 result["name"] = generate_pretty_name(cid, self.caldwell_map, self.reverse_caldwell_map, self.common_names)
-                                if cid.startswith("M "): result["wiki_url"] = f"https://de.wikipedia.org/wiki/Messier_{cid.split(' ')[1]}"
+                                if cid.startswith("M "):
+                                    result["wiki_url"] = f"https://de.wikipedia.org/wiki/Messier_{cid.split(' ')[1]}"
                                 try:
-                                    coord = SkyCoord.from_name(s_for)
-                                except: pass
+                                    online_q = re.sub(r'(?i)^B\s*(\d+)$', r'Barnard \1', s_for.strip())
+                                    coord = SkyCoord.from_name(online_q)
+                                except Exception:
+                                    pass
                                 break
 
                     if coord:
                         result["ra_decimal"] = coord.ra.deg; result["dec_decimal"] = coord.dec.deg
                         result["coords"] = f"RA: {coord.ra.to_string(unit=u.hour, sep=' ', pad=True, precision=0)} | DEC: {coord.dec.to_string(sep=' ', pad=True, alwayssign=True, precision=0)}"
-                        if not result["status_text"]: result["status_text"] = "Koordinaten online abgerufen."
-                        self.save_to_cache(s_for, result["coords"], result["ra_decimal"], result["dec_decimal"])
+                        if not result["status_text"]:
+                            result["status_text"] = "Koordinaten online abgerufen."
+                        self.save_to_cache(clean_cache_k, result["coords"], result["ra_decimal"], result["dec_decimal"])
                     else:
                         raise Exception("Keine Koordinaten gefunden")
-                        
+
                 result["user_note"] = self.get_note(search_term)
-                result["todo_status"] = self.get_todo_status(search_term) 
-            except:
+                result["todo_status"] = self.get_todo_status(search_term)
+            except Exception:
                 result["coords"] = "Keine Koordinaten gefunden."
-                if not result["found_locally"]: result["status_text"] = "Nichts gefunden."
+                if not result["found_locally"]:
+                    result["status_text"] = "Nichts gefunden."
 
         if not result["wiki_url"] and result["name"] != "---":
             name_check = result["name"]
