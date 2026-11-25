@@ -182,3 +182,4 @@ cython_debug/
 AstroArchive/astro_log.txt
 AstroArchive/astroarchive_config.json
 AstroArchive/user_notes.json
+AstroArchive/known_library.json

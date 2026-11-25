@@ -586,7 +586,7 @@ class WimsImportWindow(ctk.CTkToplevel):
         self.destroy()
         self.master.after(100, lambda: cb(selected))
         
-    class CatalogEditorWindow(ctk.CTkToplevel):
+class CatalogEditorWindow(ctk.CTkToplevel):
     def __init__(self, parent, logic):
         super().__init__(parent)
         self.logic = logic
